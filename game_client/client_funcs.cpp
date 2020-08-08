@@ -27,7 +27,7 @@ void* surface_list[Max_Obj_Cnt];
 	cur_device = (LPDIRECT3DDEVICE9)(device_list[obj_id]);
 
 HRESULT FakeDCreateWindow() {
-	Log::log("FakedCreateWindow() called\n");
+	Log::slog("FakedCreateWindow() called\n");
 	TCHAR szAppName[]= TEXT("HelloWin");
 	TCHAR szClassName[]= TEXT("HelloWinClass");
 

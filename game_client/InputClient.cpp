@@ -477,11 +477,11 @@ DWORD WINAPI InputThread(LPVOID lpParameter){
 			case SDL_KEYDOWN:
 			case SDL_KEYUP:
 				//printf("key event\n");
-				//Log::log("key event\n");
+				Log::log("key event\n");
 				break;
 			case SDL_MOUSEBUTTONDOWN:
 				//printf("mouse down\n");
-				//Log::log("mouse down\n");
+				Log::log("mouse down\n");
 				break;
 			default:
 				break;
@@ -537,6 +537,7 @@ HWND CreateWindowWithSDL(int w, int h, int x,int y){
 		return NULL;
 	}
 	SDL_SetRelativeMouseMode(SDL_TRUE);
+	//SDL_SetRelativeMouseMode(SDL_FALSE);
 	SDL_ShowCursor(0);
 	SDL_StartTextInput();
 

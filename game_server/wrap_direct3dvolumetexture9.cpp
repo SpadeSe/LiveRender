@@ -1,7 +1,7 @@
 #include "wrap_direct3dvolumetexture9.h"
 #include "wrap_direct3ddevice9.h"
 #include "wrap_direct3dvolume9.h"
-#include "opcode.h"
+#include "utility.h"
 
 int WrapperDirect3DVolumeTexture9::ins_count = 0;
 HashSet WrapperDirect3DVolumeTexture9::m_list;

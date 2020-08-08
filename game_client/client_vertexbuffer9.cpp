@@ -12,7 +12,8 @@ float mx, my, mz;
 
 ClientVertexBuffer9::ClientVertexBuffer9(IDirect3DVertexBuffer9* ptr, int _length): m_vb(ptr), length(_length), isFirst(true) {
 	Log::log("clientVertexBuffer constructor entered, len:%d\n", _length);
-	//this->vb_data = (char *)malloc(sizeof(char ) * _length);
+	
+	this->vb_data = (char *)malloc(sizeof(char ) * _length);
 	if(!this->vb_data){
 		Log::log("clientVertexBuffer constructor malloc vb_data failed!\n");
 	}

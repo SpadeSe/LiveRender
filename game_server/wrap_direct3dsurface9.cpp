@@ -71,7 +71,7 @@ WrapperDirect3DSurface9* WrapperDirect3DSurface9::GetWrapperSurface9(IDirect3DSu
 	if(ret == NULL) {
 		Log::log("WrapperDirect3DSurface9::GetWrapperSurface9(), ret is NULL, IDSurface:%d, ins_count:%d\n",ptr,WrapperDirect3DSurface9::ins_count);
 		// add the following line , 2013/7/23 21:12
-	//	ret = new WrapperDirect3DSurface9(ptr, WrapperDirect3DSurface9::ins_count++);
+		ret = new WrapperDirect3DSurface9(ptr, WrapperDirect3DSurface9::ins_count++);
 	}
 	return ret;
 }

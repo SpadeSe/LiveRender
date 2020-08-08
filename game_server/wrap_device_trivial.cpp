@@ -51,7 +51,7 @@ WrapperDirect3DDevice9* WrapperDirect3DDevice9::GetWrapperDevice9(IDirect3DDevic
 }
 
 STDMETHODIMP WrapperDirect3DDevice9::QueryInterface(THIS_ REFIID riid, void** ppvObj) {
-	Log::log("WrapperDirect3DDevice9::QueryInterface() called, base_device=%d, this=%d, riid: %d, ppvObj=%d \n", m_device, this,riid, *ppvObj);
+	Log::log("WrapperDirect3DDevice9::QueryInterface() called, base_device=%x, this=%x, riid: %x, ppvObj=%x \n", m_device, this,riid, *ppvObj);
 	HRESULT hr = m_device->QueryInterface(riid, ppvObj);
 	*ppvObj = this;
 	if(hr == E_NOINTERFACE){

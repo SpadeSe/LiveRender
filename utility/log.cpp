@@ -23,6 +23,8 @@ void Log::close() {
 	fs_.close();
 }
 
+#define ENABLE_LOG
+
 void Log::log(const char* text, ...) {
 #ifdef ENABLE_LOG
 	if(!is_init_) init("fuck.log");

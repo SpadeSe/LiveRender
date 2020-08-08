@@ -1,4 +1,4 @@
-//#include "utility.h"
+#include "utility.h"
 #include "common_net.h"
 #include "detours/detours.h"
 

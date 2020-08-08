@@ -151,5 +151,6 @@
     <None Include="game_server.def">
       <Filter>源文件</Filter>
     </None>
+    <None Include="ClassDiagram1.cd" />
   </ItemGroup>
 </Project>
