@@ -11,3 +11,4 @@
 *.intermediate.manifest
 *.cd
 *.opensdf
+*.suo
