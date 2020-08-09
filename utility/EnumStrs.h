@@ -1,0 +1,2 @@
+// ·µ»ØD3DTRANSFORMSTATETYPEµÄ×Ö·û´®
+char* D3DTRANSFORMSTATETYPE_Str(int enumNum);

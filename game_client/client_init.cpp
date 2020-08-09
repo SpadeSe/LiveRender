@@ -35,8 +35,8 @@ bool init_window(int width, int height, DWORD dwExStyle, DWORD dwStyle) {
 	WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, MsgProc, 0, 0, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, WINDOW_CLASS, NULL };
 	RegisterClassEx(&wc);
 
-	if(width < 800) width = 800;
-	if(height < 600) height = 600;
+	/*if(width < 800) width = 800;
+	if(height < 600) height = 600;*/
 
 #ifdef SDL_WINDOW
 	hWnd = CreateWindowWithSDL(width, height, 0, 0);

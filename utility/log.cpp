@@ -25,6 +25,8 @@ void Log::close() {
 
 #define ENABLE_LOG
 
+
+
 void Log::log(const char* text, ...) {
 #ifdef ENABLE_LOG
 	if(!is_init_) init("fuck.log");
@@ -65,5 +67,26 @@ void Log::slog(const char* text, ...) {
 	fs_.flush();
 }
 
+void Log::log_notime(const char* text, ...)
+{
+#ifdef ENABLE_LOG
+	if(!is_init_) init("fuck.log");
+	char buffer[MAX_CHAR];
+	/*char timestr[30];
+
+	tv = time(0);
+	tm* ltime = localtime(&tv);
+	strftime(timestr, sizeof(timestr), "%H:%M:%S", ltime);*/
+
+	va_list ap;
+	va_start(ap, text);
+	vsprintf(buffer, text, ap);
+	va_end(ap);
+
+	fs_ /*<< timestr << ": " */<< buffer;
+	fs_.flush();
+
+#endif
+}
 
 

@@ -117,6 +117,8 @@ STDMETHODIMP WrapperDirect3D9::CreateDevice(THIS_ UINT Adapter,D3DDEVTYPE Device
 		pPresentationParameters->BackBufferWidth = 800;
 		*/
 	HRESULT hr = m_d3d->CreateDevice(Adapter, DeviceType, hFocusWindow, BehaviorFlags, pPresentationParameters, &base_device);
+	
+
 	cur_d3ddevice = base_device;
 
 	cs.begin_command(CreateDevice_Opcode, 0);
@@ -134,7 +136,9 @@ STDMETHODIMP WrapperDirect3D9::CreateDevice(THIS_ UINT Adapter,D3DDEVTYPE Device
 	if(SUCCEEDED(hr)) {
 		//MessageBox(NULL, "success", NULL, MB_OK);
 		*ppReturnedDeviceInterface = static_cast<IDirect3DDevice9*>(new WrapperDirect3DDevice9(base_device, WrapperDirect3DDevice9::ins_count - 1));
-
+		//设置只占一半的viewport
+		D3DVIEWPORT9 viewport = {0,0,pPresentationParameters->BackBufferWidth/2, pPresentationParameters->BackBufferHeight, 0.0, 1.0};
+		(*ppReturnedDeviceInterface)->SetViewport(&viewport);
 		Log::log("WrapperDirect3D9::CreateDevice(), base_device=%d, device=%d\n", base_device, *ppReturnedDeviceInterface);
 	}
 	else {

@@ -6,6 +6,7 @@ public:
 	static void init(const char* fname);
 	static void log(const char* text, ...);
 	static void slog(const char* text, ...);
+	static void log_notime(const char* text, ...);
 	static void close();
 
 private:

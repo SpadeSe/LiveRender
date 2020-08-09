@@ -117,6 +117,7 @@
     <ClInclude Include="common_net.h" />
     <ClInclude Include="compressor.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="EnumStrs.h" />
     <ClInclude Include="float_helper.h" />
     <ClInclude Include="hash_set.h" />
     <ClInclude Include="log.h" />
@@ -137,6 +138,7 @@
     <ClCompile Include="common_net.cpp" />
     <ClCompile Include="compressor.cpp" />
     <ClCompile Include="config.cpp" />
+    <ClCompile Include="EnumStrs.cpp" />
     <ClCompile Include="float_helper.cpp" />
     <ClCompile Include="hash.cpp" />
     <ClCompile Include="hash_set.cpp" />

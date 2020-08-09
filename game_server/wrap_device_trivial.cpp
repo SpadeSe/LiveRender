@@ -1,4 +1,5 @@
 #include "game_server.h"
+#include "d3dx9.h"
 #include "wrap_direct3d9.h"
 #include "wrap_direct3ddevice9.h"
 #include "wrap_direct3dvertexbuffer9.h"
@@ -13,6 +14,7 @@
 #include "wrap_direct3dsurface9.h"
 #include "wrap_direct3dvolumetexture9.h"
 #include "opcode.h"
+#include "EnumStrs.h"
 
 //#define SCRATCH_MEMO
 #define DELAY_TO_DRAW
@@ -646,7 +648,7 @@ STDMETHODIMP WrapperDirect3DDevice9::Clear(THIS_ DWORD Count,CONST D3DRECT* pRec
 	return hh;
 }
 STDMETHODIMP WrapperDirect3DDevice9::SetTransform(THIS_ D3DTRANSFORMSTATETYPE State,CONST D3DMATRIX* pMatrix) {
-	Log::log("WrapperDirect3DDevice9::SetTransform() called\n");
+	Log::log("WrapperDirect3DDevice9::SetTransform() called: %s\n", D3DTRANSFORMSTATETYPE_Str(State));
 	if(pMatrix == NULL) {
 		Log::log("WrapperDirect3DDevice9::SetTransform(), pMatrix is NULL!\n");
 	}
@@ -657,18 +659,58 @@ STDMETHODIMP WrapperDirect3DDevice9::SetTransform(THIS_ D3DTRANSFORMSTATETYPE St
 	*mask = 0;
 	
 	for(int i=0; i<4; ++i) {
+		Log::log_notime("[ ");
 		for(int j=0; j<4; ++j) {
-			//Log::log("matrix[%d][%d] = %f\n", i,j,pMatrix->m[i][j]);
-			if(fabs(pMatrix->m[i][j]) > eps) {
-				(*mask) ^= (1 << (i * 4 + j));
-				cs.write_float(pMatrix->m[i][j]);
+			Log::log_notime("%f ", pMatrix->m[i][j]);
+			/*if(fabs(pMatrix->m[i][j]) > eps) {
+			(*mask) ^= (1 << (i * 4 + j));
+			cs.write_float(pMatrix->m[i][j]);
+			}*/
+		}
+		Log::log_notime("]\n");
+	}
+	D3DXMATRIX newMatrix;
+	if(State == D3DTS_PROJECTION){
+		/*µ¼ÖÂ´íÎó
+		float n = -(pMatrix->m[4][3]) / (pMatrix->m[3][3]);
+		float f = (pMatrix->m[4][3]) / (1 - (pMatrix->m[3][3]));
+		float w = 2.0 * n / (pMatrix->m[1][1]);
+		float h = 2.0 * n / (pMatrix->m[2][2]);*/
+		float n = -(pMatrix->_43) / (pMatrix->_33);
+		float f = (pMatrix->_43) / (1 - (pMatrix->_33));
+		float w = 2.0 * n / (pMatrix->_11);
+		float h = 2.0 * n / (pMatrix->_22);
+		D3DXMatrixPerspectiveOffCenterLH(&newMatrix, -w/2.0, 0, -h / 2.0, h / 2, n, f);
+
+		for(int i=0; i<4; ++i) {
+			Log::log_notime("[ ");
+			for(int j=0; j<4; ++j) {
+				Log::log_notime("%f ", newMatrix.m[i][j]);
+				if(fabs(newMatrix.m[i][j]) > eps) {
+					(*mask) ^= (1 << (i * 4 + j));
+					cs.write_float(newMatrix.m[i][j]);
+				}
 			}
+			Log::log_notime("]\n");
 		}
 	}
-
+	else{
+		for(int i=0; i<4; ++i) {
+			//Log::log_notime("[ ");
+			for(int j=0; j<4; ++j) {
+				//Log::log_notime("%f ", pMatrix->m[i][j]);
+				if(fabs(pMatrix->m[i][j]) > eps) {
+					(*mask) ^= (1 << (i * 4 + j));
+					cs.write_float(pMatrix->m[i][j]);
+				}
+			}
+			//Log::log_notime("]\n");
+		}
+		newMatrix = *pMatrix;
+	}
 	cs.end_command();
 	
-	HRESULT hh = m_device->SetTransform(State, pMatrix);
+	HRESULT hh = m_device->SetTransform(State, &newMatrix);
 	
 	return hh;
 
@@ -687,6 +729,7 @@ STDMETHODIMP WrapperDirect3DDevice9::SetViewport(THIS_ CONST D3DVIEWPORT9* pView
 	}
 
 	cs.begin_command(SetViewport_Opcode, id);
+
 	cs.write_byte_arr((char*)pViewport, sizeof(*pViewport));
 	cs.end_command();
 

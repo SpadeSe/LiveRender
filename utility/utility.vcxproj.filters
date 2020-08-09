@@ -75,6 +75,9 @@
     <ClInclude Include="common_net.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="EnumStrs.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="log.cpp">
@@ -117,6 +120,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="common_net.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="EnumStrs.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
