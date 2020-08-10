@@ -662,10 +662,6 @@ STDMETHODIMP WrapperDirect3DDevice9::SetTransform(THIS_ D3DTRANSFORMSTATETYPE St
 		Log::log_notime("[ ");
 		for(int j=0; j<4; ++j) {
 			Log::log_notime("%f ", pMatrix->m[i][j]);
-			/*if(fabs(pMatrix->m[i][j]) > eps) {
-			(*mask) ^= (1 << (i * 4 + j));
-			cs.write_float(pMatrix->m[i][j]);
-			}*/
 		}
 		Log::log_notime("]\n");
 	}
@@ -693,26 +689,32 @@ STDMETHODIMP WrapperDirect3DDevice9::SetTransform(THIS_ D3DTRANSFORMSTATETYPE St
 			}
 			Log::log_notime("]\n");
 		}
+		cs.end_command();
+
+		D3DXMatrixPerspectiveOffCenterLH(&newMatrix, 0, w/2.0, -h / 2.0, h / 2, n, f);
+		HRESULT hh = m_device->SetTransform(State, &newMatrix);
+
+		return hh;
 	}
 	else{
+		newMatrix = *pMatrix;
 		for(int i=0; i<4; ++i) {
-			//Log::log_notime("[ ");
+			Log::log_notime("[ ");
 			for(int j=0; j<4; ++j) {
-				//Log::log_notime("%f ", pMatrix->m[i][j]);
-				if(fabs(pMatrix->m[i][j]) > eps) {
+				Log::log_notime("%f ", newMatrix.m[i][j]);
+				if(fabs(newMatrix.m[i][j]) > eps) {
 					(*mask) ^= (1 << (i * 4 + j));
-					cs.write_float(pMatrix->m[i][j]);
+					cs.write_float(newMatrix.m[i][j]);
 				}
 			}
-			//Log::log_notime("]\n");
+			Log::log_notime("]\n");
 		}
-		newMatrix = *pMatrix;
+		cs.end_command();
+
+		HRESULT hh = m_device->SetTransform(State, pMatrix);
+
+		return hh;
 	}
-	cs.end_command();
-	
-	HRESULT hh = m_device->SetTransform(State, &newMatrix);
-	
-	return hh;
 
 }
 STDMETHODIMP WrapperDirect3DDevice9::GetTransform(THIS_ D3DTRANSFORMSTATETYPE State,D3DMATRIX* pMatrix) {return m_device->GetTransform(State, pMatrix);}
@@ -727,13 +729,14 @@ STDMETHODIMP WrapperDirect3DDevice9::SetViewport(THIS_ CONST D3DVIEWPORT9* pView
 	if(pViewport == NULL) {
 		Log::log("WrapperDirect3DDevice9::SetViewport(), pViewport is NULL\n");
 	}
-
 	cs.begin_command(SetViewport_Opcode, id);
 
 	cs.write_byte_arr((char*)pViewport, sizeof(*pViewport));
 	cs.end_command();
 
-	HRESULT hh = m_device->SetViewport(pViewport);
+	//感觉这里会需要和前面的wrap_direct3d9中create device的地方耦合，不是太妙
+	D3DVIEWPORT9 newViewport = {pViewport->X + pViewport->Width, pViewport->Y, pViewport->Width, pViewport->Height, pViewport->MinZ, pViewport->MaxZ};
+	HRESULT hh = m_device->SetViewport(&newViewport);
 	
 	return hh;
 }
