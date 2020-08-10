@@ -83,8 +83,10 @@ HRESULT client_init() {
 	/////////////////////////////////////////////
 
 	Log::log("client_init(), init_window start, Presentation Parameter back buffer witth:%d, back buffer height:%d\n", d3dpp.BackBufferWidth, d3dpp.BackBufferHeight);
-	d3dpp.BackBufferHeight = 600;
-	d3dpp.BackBufferWidth = 800;
+	
+	//离谱，硬性修改了back buffer。可能是为了做实验所以写死了
+	/*d3dpp.BackBufferHeight = 600;
+	d3dpp.BackBufferWidth = 800;*/
 
 	//init_window(d3dpp.BackBufferWidth, d3dpp.BackBufferHeight);
 	HWND hh = FindWindow(NULL,"game-client");
