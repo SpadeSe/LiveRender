@@ -48,6 +48,7 @@ YMesh::YMesh(WrapperDirect3DDevice9* device): bs_(1000) {
 	cur_prim_count_ = 0;
 
 	slim_ = NULL;
+	abBox_ = NULL;
 
 	update_count_ = 0;
 	data_bytes_ = 0;
@@ -229,6 +230,7 @@ bool YMesh::need_decimate() {
 	}
 }
 
+//初始化ymesh的vertex, 以及boudingbox
 void YMesh::dump_pos() {
 	Log::log("YMesh::dump_pos() called\n");
 	//if(pos_dumped_) return;
@@ -246,13 +248,14 @@ void YMesh::dump_pos() {
 				pos_length = vbs_[i]->length;
 				pos_offest = nd.offest_;
 				vbs_[i]->read_data_from_buffer(&vb_data, 0, 0);
-
+				
 				pos_vb_ = vbs_[i];
 			}
 		}
 	}
 
 	if(slim_ == NULL) slim_ = new YSlim();
+	abBox_ = new AabbBox();
 	slim_->vertices.clear();
 
 	assert(vb_data);
@@ -275,7 +278,8 @@ void YMesh::dump_pos() {
 
 	int ed = min(init_vertex_count_, pos_vb_->length / pos_vb_->stride - base_vertex_index_);
 	init_vertex_count_ = ed;
-
+	Log::log_notime("\tinit vertex count: %d\n", init_vertex_count_);
+	
 	for(int i=0; i<ed; vb_data+=pos_stride, ++i) {
 
 
@@ -283,9 +287,10 @@ void YMesh::dump_pos() {
 		v.y = *( (float*)(vb_data + pos_offest + 4) );
 		v.z = *( (float*)(vb_data + pos_offest + 8) );
 		v.id = v_cnt++;
-		
 		slim_->vertices.push_back(v);
+		abBox_->AddP(v);
 	}
+	abBox_->Logout();
 }
 
 int YMesh::get_index_data(char*& ib_data, int& i, D3DFORMAT format) {
@@ -375,6 +380,125 @@ int YMesh::get_index_list() {
 	}
 
 	return mx;
+}
+
+ContainmentType YMesh::IntersectsProjFrustum(bool serverSide = true)
+{
+	//这里面的矩阵操作暂时都是写死了的
+	D3DMATRIX worldM, viewM, projM;
+	device_->GetTransform(D3DTS_WORLD, &worldM);
+	device_->GetTransform(D3DTS_VIEW, &viewM);
+	device_->GetTransform(D3DTS_PROJECTION, &projM);
+	XMMATRIX worldMat(worldM.m[0]);
+	/*XMFLOAT3 test;
+	XMStoreFloat3(&test, worldMat.r[0]);
+	Log::log("worldMat.r[0]: [%f, %f, %f]\n", test.x, test.y, test.z);*/
+	XMMATRIX viewMat(viewM.m[0]);
+	XMMATRIX projMat(projM.m[0]);
+	XMMATRIX worldView = worldMat * viewMat;
+	XMMATRIX worldViewProj = worldMat * viewMat * projMat;
+	XMVECTOR minV = XMLoadFloat3(&abBox_->minPos);
+	XMVECTOR maxV = XMLoadFloat3(&abBox_->maxPos);
+	XMFLOAT3 center, extends;
+	XMStoreFloat3(&center, XMVectorScale(XMVectorAdd(minV, maxV), 0.5));
+	XMStoreFloat3(&center, XMVectorScale(XMVectorSubtract(maxV, minV), 0.5));
+
+
+	BoundingBox bb(center, extends);
+	BoundingBox transd;
+	bb.Transform(transd, worldView);//Proj);
+	float n = -(projM._43) / (projM._33);
+	float f = (projM._43) / (1 - (projM._33));
+	float w = 2.0 * n / (projM._11);
+	float h = 2.0 * n / (projM._22);
+	BoundingFrustum fr(XMFLOAT3(0,0,0), XMFLOAT4(0,0,0,1), 
+		serverSide ? w / n : 0, serverSide ? 0 : -w / n, h / 2 / n, -h / 2 / n, n, f);
+	//BoundingFrustum::CreateFromMatrix(fr, projMat);
+	//fr.Near = n; fr.Far = f; 
+	//fr.Left = 0; fr.Right = w;//因为w是已经减半过的
+	//fr.Bottom = -h/2; fr.Top = h/2;
+	ContainmentType ct = fr.Contains(transd);
+	Log::log("YMesh::IntersectsProjFrustum Called[%s]: ", serverSide ? "Server" : "Client");
+	switch(ct){
+	case CONTAINS:Log::log_notime("CONTAINS\n");break;
+	case DISJOINT:Log::log_notime("DISJOINT\n");break;
+	case INTERSECTS:Log::log_notime("INTERSECTS\n");break;
+	}
+	return ct;
+
+	/*Log::log("World:\n");
+	for(int i = 0; i < 4; i++){
+		Log::log_notime("[");
+		for(int j = 0; j < 4; j++){
+			Log::log_notime(" %f,", worldM.m[i][j]);
+		}
+		Log::log_notime("]\n");
+	}
+	Log::log("View:\n");
+	for(int i = 0; i < 4; i++){
+		Log::log_notime("[");
+		for(int j = 0; j < 4; j++){
+			Log::log_notime(" %f,", viewM.m[i][j]);
+		}
+		Log::log_notime("]\n");
+	}
+	Log::log("Proj:\n");
+	for(int i = 0; i < 4; i++){
+		Log::log_notime("[");
+		for(int j = 0; j < 4; j++){
+			Log::log_notime(" %f,", projM.m[i][j]);
+		}
+		Log::log_notime("]\n");
+	}
+	float n = -(projM._43) / (projM._33);
+	float f = (projM._43) / (1 - (projM._33));
+	float w = 2.0 * n / (projM._11);
+	float h = 2.0 * n / (projM._22);
+	D3DXMATRIX world(worldM), view(viewM), proj(projM);
+	D3DXMATRIX worldviewproj = world * view * proj;
+	Log::log("WorldViewProj:\n");
+	for(int i = 0; i < 4; i++){
+		Log::log_notime("[");
+		for(int j = 0; j < 4; j++){
+			Log::log_notime(" %f,", worldviewproj.m[i][j]);
+		}
+		Log::log_notime("]\n");
+	}*/
+	/*D3DXVECTOR3 minP(abBox_->minP.x, abBox_->minP.y, abBox_->minP.z),
+		maxP(abBox_->maxP.x, abBox_->maxP.y, abBox_->maxP.z);
+	D3DXVECTOR4 minVec, maxVec;
+	D3DXVec3Transform(&minVec, &minP, &worldviewproj);
+	D3DXVec3Transform(&maxVec, &maxP, &worldviewproj);
+	Log::log("nottransformedMin:(%f, %f, %f)\n", minP.x, minP.y, minP.z);
+	Log::log("nottransformedMax:(%f, %f, %f)\n", maxP.x, maxP.y, maxP.z);
+	Log::log("transformedMin:(%f, %f, %f)\n", minVec.x, minVec.y, minVec.z);
+	Log::log("transformedMax:(%f, %f, %f)\n", maxVec.x, maxVec.y, maxVec.z);
+	D3DXVECTOR4 centerVec = (minVec + maxVec) * 0.5;
+	D3DXVECTOR4 boxPoints[8];
+	abBox_->GetAllPoints(boxPoints);
+	Frustum frustum(-w, 0, -h / 2, h / 2, n, f);
+	int totalInCount = 0;
+	for(int i = 0; i < 6; i++){
+		int inCount = 8;
+		int totalIn = 1;
+		for(int j = 0; j < 8; j++){
+			if(frustum.VertexPlaneSide(i, boxPoints[j]) == FRONT){
+				inCount--;
+				totalIn = 0;
+			}
+		}
+		if(inCount == 0){
+			Log::log("YMesh::OutsideProjCone: mesh OUTSIDE cone\n");
+			return OUTSIDE;
+		}
+		totalInCount += totalIn;
+	}
+	if(totalInCount == 6){
+		Log::log("YMesh::OutsideProjCone: mesh INSIDE cone\n");
+		return INSIDE;
+	}
+	Log::log("YMesh::OutsideProjCone: mesh INTERSECT cone: %d\n", totalInCount);
+	return INTERSECT;*/
 }
 
 void YMesh::dump_index() {
@@ -493,6 +617,7 @@ void YMesh::update_index_buffer(WrapperDirect3DIndexBuffer9* ib) {
 }
 
 //Update the specified(by sn) vertex buffer
+//vertex就是在这里写入到网络中的
 void YMesh::update_vertex_buffer(int sn) {
 	Log::log("YMesh::update_vertex_buffer() called\n");
 
@@ -695,10 +820,10 @@ void YMesh::render(INT BaseVertexIndex,UINT MinVertexIndex, int offest, int prim
 		if(vbs_[i] == NULL) {
 			continue;
 		}
-
+		//
 		update_vertex_buffer(i);
 	}
-
+	//OutsideProjCone();
 	cur_frame_ ^= 1;
 
 	if(need_decimate()) {

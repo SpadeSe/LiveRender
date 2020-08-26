@@ -106,20 +106,51 @@ HRESULT FakedClear() {
 
 HRESULT FakedPresent() {
 	Log::log("Faked Present called\n");
+#if 1
+	static double last_time = timeGetTime();
 
+	static double elapse_time = 0.0;
+	static double frame_cnt = 0.0;
+	static double fps = 0.0;
+
+	double frame_time = 0.0f;
+
+	double cur_time = (float)timeGetTime();
+	elapse_time += (cur_time - last_time);
+	frame_time = cur_time - last_time;
+	last_time = cur_time;
+
+	frame_cnt++;
+
+	if(elapse_time >= 1000.0) {
+		fps = frame_cnt * 1000.0 / elapse_time;
+		frame_cnt = 0;
+		elapse_time = 0;
+		Log::slog("Faked Present, fps=%.3f frame time:%.3f\n", fps,frame_time);
+	}
+#endif
 	static float last_present = 0;
 	float now_present = timeGetTime();
 
 	Log::slog("FakedPresent(), present gap=%.4f\n", now_present - last_present);
-	last_present = now_present;
 
+	static int frameCount = 0;
+	static float csDelta = 0;
 	float t1 = timeGetTime();
-
+	int frameID = cc.read_int();
 	const RECT* pSourceRect = (RECT*)(cc.read_int());
 	const RECT* pDestRect = (RECT*)(cc.read_int());
 	HWND hDestWindowOverride = (HWND)(cc.read_int());
 	const RGNDATA* pDirtyRegion = (RGNDATA*)(cc.read_int());
-
+	float serverSendTime = cc.read_float();
+	float serverFrameTime = cc.read_float();
+	frameCount++;
+	csDelta += now_present - serverSendTime;
+	if(frameID == 0){
+		Log::log("FakedPresent, frameCount: %d, clientServerTotalDelay: %.4f, avgDelay: %.4f\n", frameCount, csDelta, FLOAT(csDelta) / frameCount);
+		frameCount = 0;
+		csDelta = 0;
+	}
 	//return cur_device->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
 	GET_DEVICE();
 
@@ -127,8 +158,9 @@ HRESULT FakedPresent() {
 	HRESULT hr = cur_device->Present(NULL, NULL, NULL, NULL);
 
 	float t2 = timeGetTime();
-	Log::log("FakedPresent(), del_time=%.4f\n", t2 - t1);
-
+	Log::log("FakedPresent(), frameid: %d, client del_time=%.4f, server del_time: %.4f, differ: %.4f\n", 
+		frameID, now_present - last_present, serverFrameTime, now_present - last_present - serverFrameTime);
+	last_present = now_present;
 	return hr;
 }
 

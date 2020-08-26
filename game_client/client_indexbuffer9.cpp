@@ -75,7 +75,7 @@ void ClientIndexBuffer9::UpdateIndexBuffer() {
 				c = *( (unsigned int*)(ptr + 8) );
 			}
 			ptr += 3 * stride;
-			Log::log("a=%d b=%d c=%d\n", a, b, c);
+			//Log::log("a=%d b=%d c=%d\n", a, b, c);
 		}
 		
 		//memcpy((char*)ib_ptr, cur_ptr, m_LockData.SizeToLock);

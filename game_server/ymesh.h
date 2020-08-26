@@ -1,12 +1,17 @@
 #ifndef __YMESH__
 #define __YMESH__
 
+#include "DirectXCollision.h"
+#include "AabbBox.h"
+
 #include "utility.h"
 #include "wrap_direct3dindexbuffer9.h"
 #include "wrap_direct3dvertexbuffer9.h"
 #include "wrap_direct3dvertexdeclaration9.h"
 #include "yslim.h"
 #include "bit_set.h"
+
+using namespace DirectX;
 
 class YMesh;
 
@@ -41,6 +46,12 @@ enum DecimateDecision {
 	INIT = 0,
 	NEED,
 	NO_NEED
+};
+
+enum StateWithProjectionCone{
+	INSIDE,
+	INTERSECT,
+	OUTSIDE
 };
 
 class WrapperDirect3DDevice9;
@@ -106,6 +117,10 @@ public:
 	long long data_bytes_;
 	int update_count_;
 
+	// 判断是否在视锥体中
+	ContainmentType IntersectsProjFrustum(bool serverSide);
+
+
 private:
 	WrapperDirect3DDevice9* device_;
 	WrapperDirect3DVertexDeclaration9* decl_;
@@ -134,6 +149,8 @@ private:
 	DrawMethod draw_method_;
 
 	YSlim* slim_;
+	AabbBox* abBox_;
+	XMFLOAT3* poses;
 
 	int config_low_bound_;
 	int config_up_bound_;

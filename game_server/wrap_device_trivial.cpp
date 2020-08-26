@@ -184,7 +184,11 @@ STDMETHODIMP WrapperDirect3DDevice9::Present(THIS_ CONST RECT* pSourceRect,CONST
 	LeaveCriticalSection(&f9);
 	presented++;
 
+	static int frameId = 0;
+
+	frameId = (frameId + 1 ) % cs.config_->max_fps_;
 	cs.begin_command(Present_Opcode, id);
+	cs.write_int(frameId);
 	cs.write_int(0);
 	cs.write_int(0);
 	cs.write_int(0);
@@ -228,14 +232,17 @@ STDMETHODIMP WrapperDirect3DDevice9::Present(THIS_ CONST RECT* pSourceRect,CONST
 	}
 #endif
 	/////////////////////////////////////////////////////////////////////
+	cs.write_float((float)cur_time);
+	cs.write_float((float)frame_time);
 	cs.end_command();
 
 	is_even_frame_ ^= 1;
 	
 	HRESULT hh = m_device->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
-	
+	Log::log("\nWrapperDirect3DDevice9::Present() END\n\n");
 	return hh;
 }
+
 STDMETHODIMP WrapperDirect3DDevice9::GetBackBuffer(THIS_ UINT iSwapChain,UINT iBackBuffer,D3DBACKBUFFER_TYPE Type,IDirect3DSurface9** ppBackBuffer) {
 	Log::log("WrapperDirect3DDevice9::GetBackBuffer() called, iSwapChain:%d, iBackBuffer:%d, Buffer type:%d\n", iSwapChain, iBackBuffer, Type);
 	IDirect3DSurface9* base_surface = NULL;
@@ -676,6 +683,7 @@ STDMETHODIMP WrapperDirect3DDevice9::SetTransform(THIS_ D3DTRANSFORMSTATETYPE St
 		float f = (pMatrix->_43) / (1 - (pMatrix->_33));
 		float w = 2.0 * n / (pMatrix->_11);
 		float h = 2.0 * n / (pMatrix->_22);
+		Log::log("SetTransform: width: %f, height: %f, near: %f, far: %f\n", w, h, n, f);
 		D3DXMatrixPerspectiveOffCenterLH(&newMatrix, -w/2.0, 0, -h / 2.0, h / 2, n, f);
 
 		for(int i=0; i<4; ++i) {
@@ -699,15 +707,15 @@ STDMETHODIMP WrapperDirect3DDevice9::SetTransform(THIS_ D3DTRANSFORMSTATETYPE St
 	else{
 		newMatrix = *pMatrix;
 		for(int i=0; i<4; ++i) {
-			Log::log_notime("[ ");
+			//Log::log_notime("[ ");
 			for(int j=0; j<4; ++j) {
-				Log::log_notime("%f ", newMatrix.m[i][j]);
+				//Log::log_notime("%f ", newMatrix.m[i][j]);
 				if(fabs(newMatrix.m[i][j]) > eps) {
 					(*mask) ^= (1 << (i * 4 + j));
 					cs.write_float(newMatrix.m[i][j]);
 				}
 			}
-			Log::log_notime("]\n");
+			//Log::log_notime("]\n");
 		}
 		cs.end_command();
 

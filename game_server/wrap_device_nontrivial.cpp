@@ -66,7 +66,6 @@ STDMETHODIMP WrapperDirect3DDevice9::DrawPrimitive(THIS_ D3DPRIMITIVETYPE Primit
 	/*
 	cur_ib_ = NULL;
 	cur_decl_ = NULL;
-	
 	*/
 
 if(enableRender)
@@ -129,32 +128,35 @@ STDMETHODIMP WrapperDirect3DDevice9::DrawIndexedPrimitive(THIS_ D3DPRIMITIVETYPE
 		//y_mesh->dump_mesh();
 	}
 
-	
-
 	y_mesh->decimate();
 
-	
-	y_mesh->render(BaseVertexIndex, MinVertexIndex, startIndex, primCount);
+	ContainmentType clientType = y_mesh->IntersectsProjFrustum(false);
+	if(clientType == CONTAINS || clientType == INTERSECTS){
 
-	//the mesh doesn't do the decimation, render yourself.
-	if(y_mesh->decision_ == NO_NEED) {
-		cs.begin_command(DrawIndexedPrimitive_Opcode, id);
-		cs.write_char(Type);
-		cs.write_int(BaseVertexIndex);
-		cs.write_int(MinVertexIndex);
-		cs.write_uint(NumVertices);
-		cs.write_uint(startIndex);
-		cs.write_uint(primCount);
-		cs.end_command();
+		y_mesh->render(BaseVertexIndex, MinVertexIndex, startIndex, primCount);
+
+		if(y_mesh->decision_ == NO_NEED) {
+			cs.begin_command(DrawIndexedPrimitive_Opcode, id);
+			cs.write_char(Type);
+			cs.write_int(BaseVertexIndex);
+			cs.write_int(MinVertexIndex);
+			cs.write_uint(NumVertices);
+			cs.write_uint(startIndex);
+			cs.write_uint(primCount);
+			cs.end_command();
+		}
 	}
+	//the mesh doesn't do the decimation, render yourself.
+	
 
 	/*
 	cur_ib_ = NULL;
 	cur_decl_ = NULL;
 	
 	*/
-
-if(enableRender)
+	//Debug: 只绘制交叉的ymesh
+	ContainmentType serverType = y_mesh->IntersectsProjFrustum(true);
+if(enableRender && (serverType == INTERSECTS || serverType == CONTAINS))
 	return m_device->DrawIndexedPrimitive(Type, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
 else
 	return D3D_OK;
