@@ -123,6 +123,8 @@ FuncJumpTable funcs[] = {
 	X(SetGammaRamp),
 	X(NullInstruct),
 
+	X(StartClientRTSPThread),
+
 	{NULL, NULL}
 };
 
@@ -252,6 +254,8 @@ void init_fptable() {
 
 	fptable.SetGammaRamp = FakedSetGammaRamp;
 	fptable.NullInstruct = FakeNullInstruct;
+
+	fptable.StartClientRTSPThread = StartClientRTSPThread;
 }
 
 

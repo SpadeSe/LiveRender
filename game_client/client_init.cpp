@@ -1,6 +1,11 @@
 #include "utility.h"
 #include "game_client.h"
+#include "rtsp_client.h"
 #define SDL_WINDOW
+
+extern int game_width;
+extern int game_height;
+extern int decoder_width, decoder_height;
 
 //
 //Initialize client window, dispatch messages
@@ -79,12 +84,15 @@ HRESULT client_init() {
 	DWORD BehaviorFlags = cc.read_uint();
 
 	cc.read_byte_arr((char*)(&d3dpp), sizeof(d3dpp));
+	game_width = d3dpp.BackBufferWidth;
+	decoder_width = game_width / 2;
+	decoder_height = game_height = d3dpp.BackBufferHeight;
 	d3dpp.BackBufferFormat = displayMode.Format;
 	/////////////////////////////////////////////
 
 	Log::log("client_init(), init_window start, Presentation Parameter back buffer witth:%d, back buffer height:%d\n", d3dpp.BackBufferWidth, d3dpp.BackBufferHeight);
 	
-	//离谱，硬性修改了back buffer。可能是为了做实验所以写死了
+	//硬性修改了back buffer。可能是为了做实验所以写死了
 	/*d3dpp.BackBufferHeight = 600;
 	d3dpp.BackBufferWidth = 800;*/
 

@@ -51,6 +51,9 @@
     <ClCompile Include="InputClient.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="rtsp_client.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="game_client.h">
@@ -78,6 +81,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="client_vertexbuffer9.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="rtsp_client.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

@@ -1,8 +1,8 @@
 #include "utility.h"
 #include "common_net.h"
-#include "detours/detours.h"
+#include "detours.h"
 
-#pragma comment(lib, "detours/detours.lib")
+//#pragma comment(lib, "detours/detours.lib")
 
 int main(int argc, char** argv) {
 	//CommandServer for data connect, and CommandNet for input connect.

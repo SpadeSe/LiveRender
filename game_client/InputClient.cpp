@@ -1,8 +1,8 @@
 #include "common_net.h"
 
-#include "SDL2/SDL.h"
 //#include "SDL.h"
 #include <Windows.h>
+#include "SDL2/SDL.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -134,7 +134,7 @@ static unsigned char *qbuffer = NULL;
 
 extern HINSTANCE hinstance;
 extern HWND hWnd;
-
+extern SDL_Window* pSDLWindow;
 
 int inputTickStart = 0;
 int inputTickEnd = 0;
@@ -424,7 +424,7 @@ DWORD WINAPI InputUploadThread(LPVOID lpParameter){
 			//send data and release mutex
 			dis->end_transaction();
 
-			Log::log("send msg\n");
+			//Log::log("[InputClient.CPP]InputUploadThread().send msg: %c\n", qm->msg[0]);
 			if( mms->sdlkey == htonl( SDLK_F9) && mms->is_pressed){
 				// send f9 key message
 				//Log::slog("client deal time:%d\n", GetTickCount() - inputTickStart);
@@ -523,7 +523,7 @@ HWND GetWindowHandleByPID(DWORD dwProcessID){
 	return NULL;
 }
 HWND CreateWindowWithSDL(int w, int h, int x,int y){
-	SDL_Window * window;
+	//SDL_Window * pSDLWindow;//window
 	SDL_Event evet;
 	int done;
 
@@ -531,8 +531,8 @@ HWND CreateWindowWithSDL(int w, int h, int x,int y){
 		fprintf(stderr, "Couldn't initilize SDL: %s\n", SDL_GetError());
 		return NULL;
 	}
-	window = SDL_CreateWindow("game-client", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, 0);
-	if(!window){
+	pSDLWindow = SDL_CreateWindow("game-client", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, 0);
+	if(!pSDLWindow){
 		fprintf(stderr, "Couldn't create window:%s\n", SDL_GetError());
 		return NULL;
 	}

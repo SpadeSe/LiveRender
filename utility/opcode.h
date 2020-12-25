@@ -132,7 +132,9 @@
 #define SetGammaRamp_Opcode				96
 #define NULLINSTRUCT_Opcode					97
 
-#define MaxSizeUntilNow_Opcode				98
+#define SetupRtspThread 98
 
+#define MaxSizeUntilNow_Opcode				99
 
+//for rtsp
 #endif

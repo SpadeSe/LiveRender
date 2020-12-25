@@ -3,9 +3,25 @@
 #include "wrap_direct3ddevice9.h"
 #include "opcode.h"
 
+#include "rtsp_server.h"
+
 IDirect3DDevice9 * cur_d3ddevice = NULL;
 D3DCAPS9 d3d_caps;
 bool GetDeviceCapsCalled = false;
+
+int game_width = 0;
+int game_height = 0;
+int encoder_width, encoder_height;//encoder_width 是不包含未渲染的那一半的（尽管backbuffer还是有那一半）
+
+//for rtsp thread
+uint8_t* sps = nullptr, *pps = nullptr;
+int spslen = 0, ppslen = 0;
+uint8_t* encode_extradata = nullptr;
+int encode_extradatasize = 0;//to be filled in the rtsp thread
+mutex rtsp_thread_mutex;
+condition_variable rtsp_thread_cv;
+extern bool rtsp_server_inited;
+
 
 WrapperDirect3D9::WrapperDirect3D9(IDirect3D9* ptr, int _id): m_d3d(ptr), id(_id) {}
 
@@ -116,6 +132,9 @@ STDMETHODIMP WrapperDirect3D9::CreateDevice(THIS_ UINT Adapter,D3DDEVTYPE Device
 	if(pPresentationParameters->BackBufferWidth < 800)
 		pPresentationParameters->BackBufferWidth = 800;
 		*/
+
+	//设置pPresentationParameters的backbufferwidth
+	//pPresentationParameters->BackBufferWidth /= 2;
 	HRESULT hr = m_d3d->CreateDevice(Adapter, DeviceType, hFocusWindow, BehaviorFlags, pPresentationParameters, &base_device);
 	
 
@@ -137,13 +156,39 @@ STDMETHODIMP WrapperDirect3D9::CreateDevice(THIS_ UINT Adapter,D3DDEVTYPE Device
 		//MessageBox(NULL, "success", NULL, MB_OK);
 		*ppReturnedDeviceInterface = static_cast<IDirect3DDevice9*>(new WrapperDirect3DDevice9(base_device, WrapperDirect3DDevice9::ins_count - 1));
 		//调用wrap_device中的SetViewport设置只占一半的viewport
-		D3DVIEWPORT9 viewport = {0,0,pPresentationParameters->BackBufferWidth/2, pPresentationParameters->BackBufferHeight, 0.0, 1.0};
+		D3DVIEWPORT9 viewport = {0,0,pPresentationParameters->BackBufferWidth / 2, pPresentationParameters->BackBufferHeight, 0.0, 1.0};
+		game_width = pPresentationParameters->BackBufferWidth;
+		encoder_width = game_width / 2;//TODO:adjust the percentage here / 2;
+		encoder_height = game_height = pPresentationParameters->BackBufferHeight;
 		(*ppReturnedDeviceInterface)->SetViewport(&viewport);
+		//TODO: 设置全局的width和height参数
 		Log::log("WrapperDirect3D9::CreateDevice(), base_device=%d, device=%d\n", base_device, *ppReturnedDeviceInterface);
 	}
 	else {
 		Log::log("Create Device Failed\n");
 	}
+
+	//在这之后开启rtsp_server线程
+	Log::log("Call liveserver_main...\n");
+	thread rtsp_server_thread(liveserver_main);
+	rtsp_server_thread.detach();
+	unique_lock<mutex> lock(rtsp_thread_mutex);
+	Log::log("Waiting for rtsp_server init...\n");
+	while (!rtsp_server_inited) {
+		rtsp_thread_cv.wait(lock);
+	}
+	Log::log("rtsp_server init end. Send command code...\n");
+	cs.begin_command(SetupRtspThread, 0);
+	Log::log("send encode extradata: %p, %d\n", encode_extradata, encode_extradatasize);
+	cs.write_int(encode_extradatasize);
+	cs.write_byte_arr((char*)encode_extradata, encode_extradatasize);
+	//TODO: now we send server max_fps here, but it should be send from client to server actually
+	cs.write_int(cs.config_->max_fps_);
+	/*cs.write_int(spslen);
+	cs.write_byte_arr((char*)sps, spslen);
+	cs.write_int(ppslen);
+	cs.write_byte_arr((char*)pps, ppslen);*/
+	cs.end_command();
 
 	return hr;
 }

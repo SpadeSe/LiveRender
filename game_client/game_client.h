@@ -1,6 +1,8 @@
 #ifndef __GAME_CLIENT__
 #define __GAME_CLIENT__
 
+
+
 #include "utility.h"
 #include "opcode.h"
 #include "client_api.h"
@@ -20,12 +22,17 @@
 #include "client_swapchain9.h"
 #include "client_surface9.h"
 
+
 extern IDirect3D9* g_d3d;
 
 extern HWND window_handle;
 extern int op_code;
 extern int obj_id;
 extern CommandClient cc;
+
+extern int game_width;
+extern int game_height;
+extern int decoder_width, decoder_height;
 
 #define WINDOW_CLASS "MYWINDOWCLASS"
 #define WINDOW_NAME "game-client"

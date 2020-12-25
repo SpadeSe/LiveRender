@@ -84,10 +84,7 @@
     <ClCompile Include="AabbBox.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Frustum.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="Collision.cpp">
+    <ClCompile Include="rtsp_server.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -158,10 +155,7 @@
     <ClInclude Include="AabbBox.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Frustum.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Collision.h">
+    <ClInclude Include="rtsp_server.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -169,6 +163,5 @@
     <None Include="game_server.def">
       <Filter>源文件</Filter>
     </None>
-    <None Include="ClassDiagram1.cd" />
   </ItemGroup>
 </Project>

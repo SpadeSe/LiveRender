@@ -1,3 +1,5 @@
+//#include "ScreenCapture.h"
+//#include <Mmsystem.h>
 #include "game_server.h"
 #include "d3dx9.h"
 #include "wrap_direct3d9.h"
@@ -14,7 +16,12 @@
 #include "wrap_direct3dsurface9.h"
 #include "wrap_direct3dvolumetexture9.h"
 #include "opcode.h"
+
 #include "EnumStrs.h"
+#include "rtsp_server.h"
+
+//used global variables
+extern VEncoder_h264* g_encoder;
 
 //#define SCRATCH_MEMO
 #define DELAY_TO_DRAW
@@ -166,8 +173,10 @@ int presented = 0;
 extern CRITICAL_SECTION f9;
 extern int serverInputArrive;
 
+
+
 STDMETHODIMP WrapperDirect3DDevice9::Present(THIS_ CONST RECT* pSourceRect,CONST RECT* pDestRect,HWND hDestWindowOverride,CONST RGNDATA* pDirtyRegion) {
-	Log::log("WrapperDirect3DDevice9::Present(), source %d, dst %d, wind %d, rgbdata %d\n", pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+	Log::log("WrapperDirect3DDevice9::Present(), srcRect %d, dstRect %d, dstWindow %d, rgbdata %d\n", pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
 	
 	EnterCriticalSection(&f9);
 	if(F9Pressed && presented > 1){
@@ -193,7 +202,8 @@ STDMETHODIMP WrapperDirect3DDevice9::Present(THIS_ CONST RECT* pSourceRect,CONST
 	cs.write_int(0);
 	cs.write_int(0);
 	cs.write_int(0);
-	
+
+
 
 	/////////////////////////////////////////////////////////////////////
 	//limit it to max_fps
@@ -239,7 +249,14 @@ STDMETHODIMP WrapperDirect3DDevice9::Present(THIS_ CONST RECT* pSourceRect,CONST
 	is_even_frame_ ^= 1;
 	
 	HRESULT hh = m_device->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
-	Log::log("\nWrapperDirect3DDevice9::Present() END\n\n");
+	Log::log("devicePresent end. call Copying Frame in WrapperDirect3DDevice9::Present():\n");
+	if (g_encoder) {
+		bool re = g_encoder->CopyD3D9RenderingFrame(m_device);
+		if (!re) {
+			Log::log("Failed to copy Frame in Present\n");
+		}
+	}
+	Log::log("WrapperDirect3DDevice9::Present() END\n\n");
 	return hh;
 }
 
@@ -665,13 +682,13 @@ STDMETHODIMP WrapperDirect3DDevice9::SetTransform(THIS_ D3DTRANSFORMSTATETYPE St
 	unsigned short *mask = (unsigned short*)(cs.get_cur_ptr(sizeof(unsigned short)));
 	*mask = 0;
 	
-	for(int i=0; i<4; ++i) {
+	/*for(int i=0; i<4; ++i) {
 		Log::log_notime("[ ");
 		for(int j=0; j<4; ++j) {
 			Log::log_notime("%f ", pMatrix->m[i][j]);
 		}
 		Log::log_notime("]\n");
-	}
+	}*/
 	D3DXMATRIX newMatrix;
 	if(State == D3DTS_PROJECTION){
 		/*导致错误
@@ -683,19 +700,20 @@ STDMETHODIMP WrapperDirect3DDevice9::SetTransform(THIS_ D3DTRANSFORMSTATETYPE St
 		float f = (pMatrix->_43) / (1 - (pMatrix->_33));
 		float w = 2.0 * n / (pMatrix->_11);
 		float h = 2.0 * n / (pMatrix->_22);
-		Log::log("SetTransform: width: %f, height: %f, near: %f, far: %f\n", w, h, n, f);
+		//Log::log("SetTransform: width: %f, height: %f, near: %f, far: %f\n", w, h, n, f);
+		//在这里
 		D3DXMatrixPerspectiveOffCenterLH(&newMatrix, -w/2.0, 0, -h / 2.0, h / 2, n, f);
 
 		for(int i=0; i<4; ++i) {
-			Log::log_notime("[ ");
+			//Log::log_notime("[ ");
 			for(int j=0; j<4; ++j) {
-				Log::log_notime("%f ", newMatrix.m[i][j]);
+				//Log::log_notime("%f ", newMatrix.m[i][j]);
 				if(fabs(newMatrix.m[i][j]) > eps) {
 					(*mask) ^= (1 << (i * 4 + j));
 					cs.write_float(newMatrix.m[i][j]);
 				}
 			}
-			Log::log_notime("]\n");
+			//Log::log_notime("]\n");
 		}
 		cs.end_command();
 
@@ -742,7 +760,7 @@ STDMETHODIMP WrapperDirect3DDevice9::SetViewport(THIS_ CONST D3DVIEWPORT9* pView
 	cs.write_byte_arr((char*)pViewport, sizeof(*pViewport));
 	cs.end_command();
 
-	//感觉这里会需要和前面的wrap_direct3d9中create device的地方耦合，不是太妙
+	
 	D3DVIEWPORT9 newViewport = {pViewport->X + pViewport->Width, pViewport->Y, pViewport->Width, pViewport->Height, pViewport->MinZ, pViewport->MaxZ};
 	HRESULT hh = m_device->SetViewport(&newViewport);
 	

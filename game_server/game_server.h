@@ -21,8 +21,7 @@
 
 #define COM_METHOD(TYPE, METHOD) TYPE STDMETHODCALLTYPE METHOD
 
-#include "detours/detours.h"
-#pragma comment(lib, "detours/detours.lib")
+#include "detours.h"
 
 extern int need_dump_mesh;
 extern bool tex_send[4024];

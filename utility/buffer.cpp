@@ -84,6 +84,15 @@ void Buffer::go_back(char* sv_ptr) {
 	cur_ptr = sv_ptr;
 }
 
+char* Buffer::get_data_start()
+{
+	return (buffer_ + 4);
+}
+
+int Buffer::get_len_without_start() {
+	return get_size() - 4;
+}
+
 void Buffer::write_int(int data) {
 
 #ifdef USE_VARINT

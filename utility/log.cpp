@@ -2,10 +2,13 @@
 #include "log.h"
 #include <time.h>
 #include <stdlib.h>
+#include <mutex>
+using namespace std;
 
 char Log::fname_[100];
 ofstream Log::fs_;
 int Log::is_init_ = false;
+mutex log_mutex;
 
 time_t tv;
 
@@ -29,7 +32,7 @@ void Log::close() {
 
 void Log::log(const char* text, ...) {
 #ifdef ENABLE_LOG
-	if(!is_init_) init("fuck.log");
+	if(!is_init_) init("default.log");
 	char buffer[MAX_CHAR];
 	char timestr[30];
 
@@ -44,12 +47,11 @@ void Log::log(const char* text, ...) {
 
 	fs_ << timestr << ": " << buffer;
 	fs_.flush();
-
 #endif
 }
 
 void Log::slog(const char* text, ...) {
-	if(!is_init_) init("sfuck.log");
+	if(!is_init_) init("sdefault.log");
 	char buffer[MAX_CHAR];
 
 	char timestr[30];
@@ -70,7 +72,7 @@ void Log::slog(const char* text, ...) {
 void Log::log_notime(const char* text, ...)
 {
 #ifdef ENABLE_LOG
-	if(!is_init_) init("fuck.log");
+	if(!is_init_) init("default_notime.log");
 	char buffer[MAX_CHAR];
 	/*char timestr[30];
 
@@ -85,7 +87,6 @@ void Log::log_notime(const char* text, ...)
 
 	fs_ /*<< timestr << ": " */<< buffer;
 	fs_.flush();
-
 #endif
 }
 

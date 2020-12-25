@@ -130,7 +130,11 @@ STDMETHODIMP WrapperDirect3DDevice9::DrawIndexedPrimitive(THIS_ D3DPRIMITIVETYPE
 
 	y_mesh->decimate();
 
-	ContainmentType clientType = y_mesh->IntersectsProjFrustum(false);
+	ContainmentType clientType = CONTAINS;
+	if(cs.config_->useFrustumClip_ == 1){//设置了之后才计算
+		clientType = y_mesh->IntersectsProjFrustum(false);
+	}
+	Log::log_notime("ServerConfig useFrustumClip:%d\n", cs.config_->useFrustumClip_);
 	if(clientType == CONTAINS || clientType == INTERSECTS){
 
 		y_mesh->render(BaseVertexIndex, MinVertexIndex, startIndex, primCount);
@@ -155,7 +159,10 @@ STDMETHODIMP WrapperDirect3DDevice9::DrawIndexedPrimitive(THIS_ D3DPRIMITIVETYPE
 	
 	*/
 	//Debug: 只绘制交叉的ymesh
-	ContainmentType serverType = y_mesh->IntersectsProjFrustum(true);
+	ContainmentType serverType = CONTAINS;
+	if(cs.config_->useFrustumClip_ == 1){//设置了之后才计算
+		serverType = y_mesh->IntersectsProjFrustum(false);
+	}
 if(enableRender && (serverType == INTERSECTS || serverType == CONTAINS))
 	return m_device->DrawIndexedPrimitive(Type, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
 else

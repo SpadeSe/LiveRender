@@ -1,5 +1,5 @@
 #include "game_client.h"
-
+#include "rtsp_client.h"
 //
 //Graphics functions fake for client
 
@@ -25,6 +25,29 @@ void* surface_list[Max_Obj_Cnt];
 
 #define GET_DEVICE() \
 	cur_device = (LPDIRECT3DDEVICE9)(device_list[obj_id]);
+
+uint8_t* decode_extradata = nullptr;
+int decode_extradatasize = 0;
+uint8_t *sps = nullptr, *pps = nullptr;
+int spslen = 0, ppslen = 0;
+HRESULT StartClientRTSPThread() {
+	//TODO:在此处开启client_rtsp
+	Log::log("StartClientRTSPThread() called...\n");
+	decode_extradatasize = cc.read_int();
+	decode_extradata = new uint8_t[decode_extradatasize];
+	cc.read_byte_arr((char*)decode_extradata, decode_extradatasize);
+	cc.get_config()->max_fps = cc.read_int();
+	/*spslen = cc.read_int();
+	cc.read_byte_arr((char *)sps, spslen);
+	ppslen = cc.read_int();
+	cc.read_byte_arr((char *)pps, ppslen);
+	memcpy(decode_extradata, sps, spslen);
+	memcpy(decode_extradata + spslen, pps, ppslen);
+	decode_extradatasize = spslen + ppslen;*/
+	thread rtsp_server_thread(client_rtsp_thread_main);
+	rtsp_server_thread.detach();
+	return S_OK;
+}
 
 HRESULT FakeDCreateWindow() {
 	Log::slog("FakedCreateWindow() called\n");
@@ -104,7 +127,9 @@ HRESULT FakedClear() {
 		return cur_device->Clear(count, NULL, Flags, color, Z, stencil);
 }
 
+//TODO：finish works in present
 HRESULT FakedPresent() {
+	HRESULT hr;
 	Log::log("Faked Present called\n");
 #if 1
 	static double last_time = timeGetTime();
@@ -155,7 +180,34 @@ HRESULT FakedPresent() {
 	GET_DEVICE();
 
 	assert(cur_device);
-	HRESULT hr = cur_device->Present(NULL, NULL, NULL, NULL);
+	//IDirect3DSurface9 *renderingSurface = NULL;
+	//static IDirect3DSurface9 *newSurface = NULL;
+	//cur_device->GetRenderTarget(0, &renderingSurface);
+	//if (newSurface == NULL) {
+	//	D3DSURFACE_DESC desc;
+	//	renderingSurface->GetDesc(&desc);
+	//	hr = cur_device->CreateOffscreenPlainSurface(desc.Width, desc.Height,
+	//		desc.Format, D3DPOOL::D3DPOOL_SYSTEMMEM, &newSurface, NULL);
+	//}
+	//cur_device->GetRenderTargetData(renderingSurface, newSurface);
+	//hr = cur_device->Present(NULL, NULL, NULL, NULL);
+	//D3DVIEWPORT9 viewport;
+	//cur_device->GetViewport(&viewport);
+	//Log::log("Prev ViewPort-- x:%d, y:%d, width:%d, height:%d\n", viewport.X, viewport.Y, viewport.Width, viewport.Height);
+	//D3DVIEWPORT9 tempport = viewport;
+	//tempport.X = tempport.Width;
+	//Log::log("New ViewPort-- x:%d, y:%d, width:%d, height:%d\n", tempport.X, tempport.Y, tempport.Width, tempport.Height);
+	//cur_device->GetRenderTarget(0, &renderingSurface);
+	//hr = cur_device->SetViewport(&tempport);
+	//if (FAILED(hr)) {
+	//	Log::log("Failed to set tempport.");
+	//}
+	//cur_device->UpdateSurface(newSurface, NULL, renderingSurface, NULL);
+	//cur_device->Present(NULL, NULL, NULL, NULL);
+	//hr = cur_device->SetViewport(&viewport);
+
+	hr = displayPresented(cur_device);
+	//hr = cur_device->Present(NULL,NULL,NULL,NULL);
 
 	float t2 = timeGetTime();
 	Log::log("FakedPresent(), frameid: %d, client del_time=%.4f, server del_time: %.4f, differ: %.4f\n", 

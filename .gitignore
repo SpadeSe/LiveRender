@@ -11,3 +11,5 @@
 *.intermediate.manifest
 *.cd
 *.opensdf
+/.vs
+*.rar

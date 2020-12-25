@@ -127,6 +127,8 @@ struct fptype {
 
 	HRESULT (*SetGammaRamp)();
 	HRESULT (*NullInstruct)();
+
+	HRESULT (*StartClientRTSPThread)();
 };
 
 extern fptype fptable;
@@ -255,5 +257,7 @@ HRESULT FakedSetDecimateResult();
 
 HRESULT FakedSetGammaRamp();
 HRESULT FakeNullInstruct();
+
+HRESULT StartClientRTSPThread();
 
 #endif

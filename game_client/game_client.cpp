@@ -1,7 +1,6 @@
 #include "common_net.h"
-#include <process.h>
 #include "game_client.h"
-
+#include <process.h>
 //
 //Client entry,to dispatch messages and execute graphics instructions
 
@@ -15,6 +14,10 @@ char b2[maxl];
 char b3[maxl];
 
 CommandClient cc;
+
+int game_width = 0;
+int game_height = 0;
+int decoder_width = 0, decoder_height = 0;
 //
 CommonNet *dic = NULL;//dic(2);
 

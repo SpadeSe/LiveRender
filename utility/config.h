@@ -14,6 +14,7 @@ public:
 	DWORD read_property(LPCTSTR lpAppName, LPCTSTR lpKeyName, float& retval);
 	BOOL write_property(LPCTSTR lpAppName, LPCTSTR lpKeyName, LPTSTR lpString);
 
+
 private:
 	char fname_[100];
 };
@@ -25,8 +26,11 @@ public:
 	void load_config();
 	void show_config();
 
+	int useFrustumClip_;//0->false, 1->true
+
 	int command_port_;
 	int max_fps_;
+	int encoder_gop_size_ = 1;
 
 	int mesh_low_;
 	int mesh_up_;
@@ -44,6 +48,7 @@ public:
 
 	char srv_ip_[100];
 	int srv_port_;
+	int max_fps;
 };
 
 #endif

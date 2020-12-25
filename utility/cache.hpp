@@ -22,11 +22,11 @@ struct HashNode {
 	}
 };
 
-class HashTable {
+class HashTable_Lr {
 public:
 
-	HashTable() : length_(0), elems_(0), list_(NULL) { resize(); }
-	~HashTable() { delete[] list_; }
+	HashTable_Lr() : length_(0), elems_(0), list_(NULL) { resize(); }
+	~HashTable_Lr() { delete[] list_; }
 
 	int size() const { return elems_; }
 
@@ -213,7 +213,7 @@ public:
 private:
 	int capacity_;
 	HashNode lru_;
-	HashTable table_;
+	HashTable_Lr table_;
 	int last_id;
 
 	int hit_cnt;

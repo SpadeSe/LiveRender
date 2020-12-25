@@ -130,6 +130,11 @@ void CommandClient::take_command(int& op_code, int& obj_id) {
 	last_command_->op_code_ = op_code;
 }
 
+ClientConfig* CommandClient::get_config()
+{
+	return config_;
+}
+
 void CommandClient::read_vec(float* vec, int size) {
 	int cache_id = read_ushort();
 	if((cache_id & 1) == Cache_Use) {

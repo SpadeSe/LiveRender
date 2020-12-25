@@ -23,6 +23,9 @@ public:
 	//go back to last block of data
 	void go_back(char* sv_ptr);
 
+	char* get_data_start();
+	int get_len_without_start();
+
 	char* get_cur_ptr();
 	char* get_cur_ptr(int length);
 	void move_over(int length);
@@ -53,7 +56,7 @@ protected:
 	int capacity_;
 	
 
-	int size_;
+	int size_;//这玩意儿会存在buffer的开头，所以cur_ptr总是要+4！
 	char* cur_ptr;
 };
 

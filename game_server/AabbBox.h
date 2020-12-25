@@ -22,7 +22,7 @@ public:
 	AabbBox();
 	AabbBox(vector<Vertex> vertexs);
 	void AddP(Vertex p);
-	void Logout();
+	void WriteToLog();
 	void GetAllPoints(D3DXVECTOR4* outpoints);
 	//static AabbBox TransformBox(AabbBox* old, Matrix mat);
 };

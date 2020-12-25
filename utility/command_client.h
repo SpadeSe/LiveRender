@@ -30,6 +30,7 @@ public:
 	void record_last_command();
 	bool validate_last_command();
 	void take_command(int& op_code, int& obj_id);
+	ClientConfig* get_config();
 
 private:
 	char* sv_ptr;

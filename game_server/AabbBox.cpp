@@ -40,7 +40,7 @@ void AabbBox::AddP(Vertex P){
 	XMStoreFloat3(&maxPos, maxV);
 }
 
-void AabbBox::Logout()
+void AabbBox::WriteToLog()
 {
 	Log::log("AABB Box:\n");
 	Log::log_notime("\tmin:( %f, %f, %f )\n\tmax:( %f, %f, %f )\n", minP.x, minP.y, minP.z, maxP.x, maxP.y, maxP.z);

@@ -1,6 +1,7 @@
 #ifndef __NEW_HASH__
 #define __NEW_HASH__
 
+#include <WinSock2.h>
 #include <windows.h>
 #include <stdio.h>
 #include <iostream>

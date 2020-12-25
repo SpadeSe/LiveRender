@@ -4,6 +4,10 @@
 #include "game_server.h"
 extern CommandServer cs;
 
+
+extern int game_width, game_height;
+extern int encoder_width, encoder_height;
+
 class WrapperDirect3D9 : public IDirect3D9 {
 private:
 	IDirect3D9* m_d3d;

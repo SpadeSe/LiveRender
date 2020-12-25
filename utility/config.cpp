@@ -13,6 +13,7 @@ Config::Config(char fname[]) {
 	strcat(dir, fname);
 
 	strcpy(fname_, dir);
+
 }
 
 Config::~Config() {
@@ -71,24 +72,31 @@ BOOL Config::write_property(LPCTSTR lpAppName, LPCTSTR lpKeyName, LPTSTR lpStrin
 /////////////////////////////////////////////////////////////////////
 //Class ServerConfig
 ServerConfig::ServerConfig(char fname[]): Config(fname) {
-
 }
 
 void ServerConfig::load_config() {
 	read_property("command_server", "fps", max_fps_);
 	read_property("command_server", "port", command_port_);
 
+	read_property("mesh_decimate", "UseFrustum", useFrustumClip_);
+
 	read_property("mesh_decimate", "low_bound", mesh_low_);
 	read_property("mesh_decimate", "up_bound", mesh_up_);
 	read_property("mesh_decimate", "ratio", mesh_ratio_);
 
 	read_property("mesh_decimate", "ban", ban_ib_);
-	
+
+	read_property("encode", "gop_size", encoder_gop_size_);
+	if (encoder_gop_size_ <= 0) {
+		printf("invalid gop_size: %d, reset to 1.\n", encoder_gop_size_);
+		encoder_gop_size_ = 1;
+	}
 }
 
 void ServerConfig::show_config() {
 	printf("[game_server]\n");
 	printf("\tfps = %d\n", max_fps_);
+	printf("encoder gop size: %d\n", encoder_gop_size_);
 
 	printf("[command_server]\n");
 	printf("\tport = %d\n", command_port_);
@@ -99,7 +107,6 @@ void ServerConfig::show_config() {
 /////////////////////////////////////////////////////////////////////
 //Class ClientConfig
 ClientConfig::ClientConfig(char fname[]): Config(fname) {
-
 }
 
 void ClientConfig::load_config(int client_num) {

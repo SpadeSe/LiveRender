@@ -247,7 +247,7 @@ void YMesh::dump_pos() {
 				pos_stride = vbs_[i]->stride;
 				pos_length = vbs_[i]->length;
 				pos_offest = nd.offest_;
-				vbs_[i]->read_data_from_buffer(&vb_data, 0, 0);
+				vbs_[i]->read_data_from_buffer(&vb_data, 0, 0);//从vertexbuffer中读出
 				
 				pos_vb_ = vbs_[i];
 			}
@@ -255,6 +255,10 @@ void YMesh::dump_pos() {
 	}
 
 	if(slim_ == NULL) slim_ = new YSlim();
+	if(abBox_ != NULL){
+		delete abBox_;
+		abBox_ = NULL;
+	}
 	abBox_ = new AabbBox();
 	slim_->vertices.clear();
 
@@ -290,7 +294,7 @@ void YMesh::dump_pos() {
 		slim_->vertices.push_back(v);
 		abBox_->AddP(v);
 	}
-	abBox_->Logout();
+	abBox_->WriteToLog();
 }
 
 int YMesh::get_index_data(char*& ib_data, int& i, D3DFORMAT format) {
@@ -401,9 +405,12 @@ ContainmentType YMesh::IntersectsProjFrustum(bool serverSide = true)
 	XMVECTOR maxV = XMLoadFloat3(&abBox_->maxPos);
 	XMFLOAT3 center, extends;
 	XMStoreFloat3(&center, XMVectorScale(XMVectorAdd(minV, maxV), 0.5));
-	XMStoreFloat3(&center, XMVectorScale(XMVectorSubtract(maxV, minV), 0.5));
-
-
+	XMStoreFloat3(&extends, XMVectorScale(XMVectorSubtract(maxV, minV), 0.5));
+	
+	/*Log::log("IntersectsProjFrustum: minV: %.2f, %.2f, %.2f, maxV: %.2f, %.2f, %.2f\n\tcenter: %.2f, %.2f, %.2f, extends: %.2f, %.2f, %.2f\n", 
+		abBox_->minPos.x, abBox_->minPos.y, abBox_->minPos.z, 
+		abBox_->maxPos.x, abBox_->maxPos.y, abBox_->maxPos.z,
+		center.x, center.y, center.z, extends.x, extends.y, extends.z);*/
 	BoundingBox bb(center, extends);
 	BoundingBox transd;
 	bb.Transform(transd, worldView);//Proj);
@@ -665,7 +672,7 @@ void YMesh::update_vertex_buffer(int sn) {
 	cs.write_int(vb_->stride);
 
 	char* vt = NULL;
-	vb_->read_data_from_buffer(&vt, 0, 0);
+	vb_->read_data_from_buffer(&vt, 0, 0);//此处读出vertexbuffer
 	char* sv_vt = vt;
 
 	//assert(remain_vertices_.size() > 0);
@@ -698,8 +705,7 @@ void YMesh::update_vertex_buffer(int sn) {
 			for(int j=0; j<source_format_[sn].size(); ++j) {
 				parse_node& nd = source_format_[sn][j];
 				//Write different types of vertice to the buffer for sending to the client
-				int ret = nd.func_(this, vb_, vt, nd.offest_, nd.size_);
-
+				int ret = nd.func_(this, vb_, vt, nd.offest_, nd.size_);//此处发送vertex buffer
 			}
 			
 
