@@ -259,6 +259,7 @@ void DummySink::afterGettingFrame(void* clientData, unsigned frameSize, unsigned
 void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes, struct timeval presentationTime, unsigned durationInMicroseconds)
 {
 	Log::log("DummySink::afterGettingFrame() called...\n");
+	//not used now
 	RTPSource *rtpsrc = fSubsession.rtpSource();
 	RTPReceptionStatsDB::Iterator iter(rtpsrc->receptionStatsDB());
 	RTPReceptionStats* stats = iter.next(True);
@@ -298,6 +299,7 @@ bool DummySink::continuePlaying()
 	if (fSource == NULL) return False; // sanity check (should not happen)
 	//get frame data from fSource
 	uint8_t* buffer = get_first_empty_buffer();
+	Log::log("fSource->fIsCurrentlyAwaitingData: %d\n", fSource->isCurrentlyAwaitingData());
 	fSource->getNextFrame(buffer,
 		RECEIVE_BUFFER_SIZE,
 		afterGettingFrame, this, onSourceClosure, this);
@@ -307,6 +309,7 @@ bool DummySink::continuePlaying()
 		used_cv.notify_one();
 	}
 	first_empty = (first_empty + 1) % MAX_RECEIVE_BUFFER;
+	Log::log("DummySink::continuePlaying end. \n");
 	return true;
 }
 

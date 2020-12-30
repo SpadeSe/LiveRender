@@ -31,6 +31,33 @@ extern int encoder_width, encoder_height;
 //线程主函数
 void liveserver_main();
 
+class DebugTaskScheduler : public BasicTaskScheduler {
+public:
+	static DebugTaskScheduler* createNew(unsigned maxSchedulerGranularity  = 10000 );
+	~DebugTaskScheduler();
+	virtual void doEventLoop(char volatile* watchVariable);
+	virtual void SingleStep(unsigned maxDelayTime);
+	virtual void setBackgroundHandling(int socketNum, int conditionSet, BackgroundHandlerProc* handlerProc, void* clientData);
+	virtual void InternalError();
+protected:
+	DebugTaskScheduler(unsigned maxSchedulerGranularity);
+#if defined(__WIN32__) || defined(_WIN32)
+	// Hack to work around a bug in Windows' "select()" implementation:
+	int fDummySocketNum;
+#endif
+};
+
+//class DebugRTSPServer : public RTSPServer {
+//public:
+//	RTSPServer* createNew(UsageEnvironment& env, Port ourPort  = 554 ,
+//		UserAuthenticationDatabase* authDatabase  = NULL ,
+//		unsigned reclamationSeconds  = 65 );
+//	class DebugRTSPClientSession : RTSPServer::RTSPClientSession {
+//	public:
+//		virtual void handleCmd_PLAY(RTSPClientConnection* ourClientConnection, ServerMediaSubsession* subsession, char const* fullRequestStr);
+//	};
+//};
+
 class VEncoder_h264{
 public:
 	struct spsppsdata {

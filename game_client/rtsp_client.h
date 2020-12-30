@@ -20,7 +20,7 @@ extern "C" {
 using namespace std;
 
 #define MAX_RECEIVE_BUFFER 8
-#define MAX_DECODE_POOL 40
+#define MAX_DECODE_POOL 20
 #define DECODE_POOL_SIZE 2000000
 #define RECEIVE_BUFFER_SIZE 8000000 //need to devide by 4 for the Buffer class
 #define RTP_RECEIVE_BUFFER_SIZE 2097152 //2 * 1024 * 1024

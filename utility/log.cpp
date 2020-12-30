@@ -3,6 +3,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <mutex>
+#include <thread>
 using namespace std;
 
 char Log::fname_[100];
@@ -11,6 +12,7 @@ int Log::is_init_ = false;
 mutex log_mutex;
 
 time_t tv;
+clock_t ct;
 
 void Log::init(const char* fname) {
 	if(is_init_) return;
@@ -32,6 +34,7 @@ void Log::close() {
 
 void Log::log(const char* text, ...) {
 #ifdef ENABLE_LOG
+	log_mutex.lock();
 	if(!is_init_) init("default.log");
 	char buffer[MAX_CHAR];
 	char timestr[30];
@@ -45,12 +48,21 @@ void Log::log(const char* text, ...) {
 	vsprintf(buffer, text, ap);
 	va_end(ap);
 
-	fs_ << timestr << ": " << buffer;
+	//extended
+	ct = clock();
+	thread::id this_id = this_thread::get_id();
+	unsigned tid = *(unsigned*)&this_id;
+
+	fs_ << timestr << "(" << ct << ")[" << tid << "]: " << buffer;
 	fs_.flush();
+	log_mutex.unlock();
 #endif
 }
 
+
+
 void Log::slog(const char* text, ...) {
+	log_mutex.lock();
 	if(!is_init_) init("sdefault.log");
 	char buffer[MAX_CHAR];
 
@@ -67,11 +79,13 @@ void Log::slog(const char* text, ...) {
 
 	fs_ << timestr << ": " << buffer;
 	fs_.flush();
+	log_mutex.unlock();
 }
 
 void Log::log_notime(const char* text, ...)
 {
 #ifdef ENABLE_LOG
+	log_mutex.lock();
 	if(!is_init_) init("default_notime.log");
 	char buffer[MAX_CHAR];
 	/*char timestr[30];
@@ -87,6 +101,7 @@ void Log::log_notime(const char* text, ...)
 
 	fs_ /*<< timestr << ": " */<< buffer;
 	fs_.flush();
+	log_mutex.unlock();
 #endif
 }
 

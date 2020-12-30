@@ -1,5 +1,8 @@
 #include "rtsp_server.h"
-
+#include "UsageEnvironment.hh"
+#include "HandlerSet.hh"
+#include <cstdio>
+using namespace std;
 //outer variables
 extern condition_variable rtsp_thread_cv;
 extern uint8_t* encode_extradata;
@@ -17,8 +20,257 @@ AVPixelFormat outFormat = AVPixelFormat::AV_PIX_FMT_BGR0;
 
 CurFrame curfame;
 
+DebugTaskScheduler* DebugTaskScheduler::createNew(unsigned maxSchedulerGranularity /* = 10000 */)
+{
+	Log::log("DebugTaskScheduler::createNew()\n");
+	return new DebugTaskScheduler(maxSchedulerGranularity);
+}
+
+DebugTaskScheduler::~DebugTaskScheduler()
+{
+#if defined(__WIN32__) || defined(_WIN32)
+	if (fDummySocketNum >= 0) closeSocket(fDummySocketNum);
+#endif
+}
+
+void DebugTaskScheduler::doEventLoop(char volatile* watchVariable)
+{
+	int count = 0;
+	int step = 10;
+	while (1) {
+		if (watchVariable != NULL && *watchVariable != 0) break;
+		double cur_time = (float)timeGetTime();
+		Log::log("DebugTaskScheduler::doEventLoop() begin SingleStep. cur_time: %f\n", cur_time);
+		SingleStep(0);
+		count++;
+		if (count/* % step == 0*/) {
+			cur_time = (float)timeGetTime();
+			Log::log("DebugTaskScheduler::doEventLoop() SingleStep for %d times.cur_time: %f\n", count, cur_time);
+		}
+		count %= 1 << 30;
+	}
+	if (watchVariable != NULL) {
+		Log::log("watchVariable: %d", *watchVariable);
+	}
+}
+
+
+#ifndef MILLION
+#define MILLION 1000000
+#endif
+
+void DebugTaskScheduler::SingleStep(unsigned maxDelayTime)
+{
+	Log::log("DebugTaskScheduler::SingleStep()...\n");
+	fd_set readSet = fReadSet; // make a copy for this select() call
+	fd_set writeSet = fWriteSet; // ditto
+	fd_set exceptionSet = fExceptionSet; // ditto
+
+	DelayInterval const& timeToDelay = fDelayQueue.timeToNextAlarm();
+	struct timeval tv_timeToDelay;
+	tv_timeToDelay.tv_sec = timeToDelay.seconds();
+	tv_timeToDelay.tv_usec = timeToDelay.useconds();
+	// Very large "tv_sec" values cause select() to fail.
+	// Don't make it any larger than 1 million seconds (11.5 days)
+	const long MAX_TV_SEC = MILLION;
+	if (tv_timeToDelay.tv_sec > MAX_TV_SEC) {
+		tv_timeToDelay.tv_sec = MAX_TV_SEC;
+	}
+	// Also check our "maxDelayTime" parameter (if it's > 0):
+	if (maxDelayTime > 0 &&
+		(tv_timeToDelay.tv_sec > (long)maxDelayTime / MILLION ||
+			(tv_timeToDelay.tv_sec == (long)maxDelayTime / MILLION &&
+				tv_timeToDelay.tv_usec > (long)maxDelayTime % MILLION))) {
+		tv_timeToDelay.tv_sec = maxDelayTime / MILLION;
+		tv_timeToDelay.tv_usec = maxDelayTime % MILLION;
+	}
+	Log::log("select() in SingleStep()\n");
+	int selectResult = select(fMaxNumSockets, &readSet, &writeSet, &exceptionSet, &tv_timeToDelay);
+	if (selectResult < 0) {
+		Log::log("selectResult < 0...\n");
+#if defined(__WIN32__) || defined(_WIN32)
+		int err = WSAGetLastError();
+		// For some unknown reason, select() in Windoze sometimes fails with WSAEINVAL if
+		// it was called with no entries set in "readSet".  If this happens, ignore it:
+		if (err == WSAEINVAL && readSet.fd_count == 0) {
+			err = EINTR;
+			// To stop this from happening again, create a dummy socket:
+			if (fDummySocketNum >= 0) closeSocket(fDummySocketNum);
+			fDummySocketNum = socket(AF_INET, SOCK_DGRAM, 0);
+			FD_SET((unsigned)fDummySocketNum, &fReadSet);
+		}
+		if (err != EINTR) {
+#else
+		if (errno != EINTR && errno != EAGAIN) {
+#endif
+			// Unexpected error - treat this as fatal:
+#if !defined(_WIN32_WCE)
+			perror("BasicTaskScheduler::SingleStep(): select() fails");
+			// Because this failure is often "Bad file descriptor" - which is caused by an invalid socket number (i.e., a socket number
+			// that had already been closed) being used in "select()" - we print out the sockets that were being used in "select()",
+			// to assist in debugging:
+			fprintf(stderr, "socket numbers used in the select() call:");
+			for (int i = 0; i < 10000; ++i) {
+				if (FD_ISSET(i, &fReadSet) || FD_ISSET(i, &fWriteSet) || FD_ISSET(i, &fExceptionSet)) {
+					fprintf(stderr, " %d(", i);
+					if (FD_ISSET(i, &fReadSet)) fprintf(stderr, "r");
+					if (FD_ISSET(i, &fWriteSet)) fprintf(stderr, "w");
+					if (FD_ISSET(i, &fExceptionSet)) fprintf(stderr, "e");
+					fprintf(stderr, ")");
+				}
+			}
+			fprintf(stderr, "\n");
+#endif
+			internalError();
+		}
+		}
+
+	Log::log("Call the handler function for one readable socket in SingleStep()...\n");
+	// Call the handler function for one readable socket:
+	HandlerIterator iter(*fHandlers);
+	HandlerDescriptor* handler;
+	// To ensure forward progress through the handlers, begin past the last
+	// socket number that we handled:
+	if (fLastHandledSocketNum >= 0) {
+		while ((handler = iter.next()) != NULL) {
+			if (handler->socketNum == fLastHandledSocketNum) break;
+		}
+		if (handler == NULL) {
+			fLastHandledSocketNum = -1;
+			iter.reset(); // start from the beginning instead
+		}
+	}
+	Log::log("ensure forward progress through the handlers end. in SingleStep()...\n");
+	while ((handler = iter.next()) != NULL) {
+		int sock = handler->socketNum; // alias
+		int resultConditionSet = 0;
+		if (FD_ISSET(sock, &readSet) && FD_ISSET(sock, &fReadSet)/*sanity check*/) resultConditionSet |= SOCKET_READABLE;
+		if (FD_ISSET(sock, &writeSet) && FD_ISSET(sock, &fWriteSet)/*sanity check*/) resultConditionSet |= SOCKET_WRITABLE;
+		if (FD_ISSET(sock, &exceptionSet) && FD_ISSET(sock, &fExceptionSet)/*sanity check*/) resultConditionSet |= SOCKET_EXCEPTION;
+		if ((resultConditionSet & handler->conditionSet) != 0 && handler->handlerProc != NULL) {
+			fLastHandledSocketNum = sock;
+			// Note: we set "fLastHandledSocketNum" before calling the handler,
+			// in case the handler calls "doEventLoop()" reentrantly.
+			Log::log("call handler->handlerProc(): %p, clientData: %p. handlersock: %d\n", *handler->handlerProc, handler->clientData, sock);
+			(*handler->handlerProc)(handler->clientData, resultConditionSet);
+			Log::log("call handler->handlerProc() end.\n");
+			break;
+		}
+	}
+	Log::log("iter handler end in SingleStep().\n");
+	if (handler == NULL && fLastHandledSocketNum >= 0) {
+		// We didn't call a handler, but we didn't get to check all of them,
+		// so try again from the beginning:
+		iter.reset();
+		while ((handler = iter.next()) != NULL) {
+			int sock = handler->socketNum; // alias
+			int resultConditionSet = 0;
+			if (FD_ISSET(sock, &readSet) && FD_ISSET(sock, &fReadSet)/*sanity check*/) resultConditionSet |= SOCKET_READABLE;
+			if (FD_ISSET(sock, &writeSet) && FD_ISSET(sock, &fWriteSet)/*sanity check*/) resultConditionSet |= SOCKET_WRITABLE;
+			if (FD_ISSET(sock, &exceptionSet) && FD_ISSET(sock, &fExceptionSet)/*sanity check*/) resultConditionSet |= SOCKET_EXCEPTION;
+			if ((resultConditionSet & handler->conditionSet) != 0 && handler->handlerProc != NULL) {
+				fLastHandledSocketNum = sock;
+				// Note: we set "fLastHandledSocketNum" before calling the handler,
+					// in case the handler calls "doEventLoop()" reentrantly.
+				Log::log("call handler->handlerProc(): %p, clientData: %p. handlersock: %d\n", *handler->handlerProc, handler->clientData, sock);
+				(*handler->handlerProc)(handler->clientData, resultConditionSet);
+				Log::log("call handler->handlerProc() end.\n");
+				break;
+			}
+		}
+		if (handler == NULL) fLastHandledSocketNum = -1;//because we didn't call a handler
+	}
+	Log::log("handle any newly-triggered event in SingleStep()...\n");
+	// Also handle any newly-triggered event (Note that we do this *after* calling a socket handler,
+	// in case the triggered event handler modifies The set of readable sockets.)
+	if (fTriggersAwaitingHandling != 0) {
+		if (fTriggersAwaitingHandling == fLastUsedTriggerMask) {
+			// Common-case optimization for a single event trigger:
+			fTriggersAwaitingHandling &= ~fLastUsedTriggerMask;
+			if (fTriggeredEventHandlers[fLastUsedTriggerNum] != NULL) {
+				(*fTriggeredEventHandlers[fLastUsedTriggerNum])(fTriggeredEventClientDatas[fLastUsedTriggerNum]);
+			}
+		}
+		else {
+			// Look for an event trigger that needs handling (making sure that we make forward progress through all possible triggers):
+			unsigned i = fLastUsedTriggerNum;
+			EventTriggerId mask = fLastUsedTriggerMask;
+
+			do {
+				i = (i + 1) % MAX_NUM_EVENT_TRIGGERS;
+				mask >>= 1;
+				if (mask == 0) mask = 0x80000000;
+
+				if ((fTriggersAwaitingHandling & mask) != 0) {
+					fTriggersAwaitingHandling &= ~mask;
+					if (fTriggeredEventHandlers[i] != NULL) {
+						(*fTriggeredEventHandlers[i])(fTriggeredEventClientDatas[i]);
+					}
+
+					fLastUsedTriggerMask = mask;
+					fLastUsedTriggerNum = i;
+					break;
+				}
+			} while (i != fLastUsedTriggerNum);
+		}
+	}
+	Log::log("fDelayQueue.handleAlarm() in SingleStep()...\n");
+	// Also handle any delayed event that may have come due.
+	fDelayQueue.handleAlarm();
+	Log::log("DebugTaskScheduler::SingleStep() end.\n");
+}
+
+
+void DebugTaskScheduler::setBackgroundHandling(int socketNum, int conditionSet, BackgroundHandlerProc* handlerProc, void* clientData)
+{
+	Log::log("DebugTaskScheduler::setBackgroundHandling(socketNum %d, handlerProc %p, clientData %p)\n", socketNum, handlerProc, clientData);
+	if (socketNum < 0) return;
+#if !defined(__WIN32__) && !defined(_WIN32) && defined(FD_SETSIZE)
+	if (socketNum >= (int)(FD_SETSIZE)) return;
+#endif
+	FD_CLR((unsigned)socketNum, &fReadSet);
+	FD_CLR((unsigned)socketNum, &fWriteSet);
+	FD_CLR((unsigned)socketNum, &fExceptionSet);
+	if (conditionSet == 0) {
+		fHandlers->clearHandler(socketNum);
+		if (socketNum + 1 == fMaxNumSockets) {
+			--fMaxNumSockets;
+		}
+	}
+	else {
+		fHandlers->assignHandler(socketNum, conditionSet, handlerProc, clientData);
+		if (socketNum + 1 > fMaxNumSockets) {
+			fMaxNumSockets = socketNum + 1;
+		}
+		if (conditionSet & SOCKET_READABLE) FD_SET((unsigned)socketNum, &fReadSet);
+		if (conditionSet & SOCKET_WRITABLE) FD_SET((unsigned)socketNum, &fWriteSet);
+		if (conditionSet & SOCKET_EXCEPTION) FD_SET((unsigned)socketNum, &fExceptionSet);
+	}
+}
+
+void DebugTaskScheduler::InternalError()
+{
+	Log::log("DebugTaskScheduler::InternalError() called. abort.\n");
+	abort();
+}
+
+DebugTaskScheduler::DebugTaskScheduler(unsigned maxSchedulerGranularity)
+	:BasicTaskScheduler(maxSchedulerGranularity), fDummySocketNum(-1)
+{
+
+}
+
 //the main func of the liveserver thread.
 void liveserver_main(){
+
+	FILE *se, *so;
+	if (freopen_s(&se, "stderr.txt", "w", stderr)) {
+		Log::log("failed to reopen stderr");
+	};
+	if (freopen_s(&so, "stdout.txt", "w", stdout)) {
+		Log::log("failed to reopen stdout");
+	};
+
 	//create encoder first
 	Log::log("thread live server_main started.\n");
 	g_encoder = VEncoder_h264::createNew();
@@ -26,13 +278,14 @@ void liveserver_main(){
 	//g_encoder->getExtraData(sps, &spslen, pps, &ppslen);
 	Log::log("Copy ExtraData end.\n");
 
-	TaskScheduler* scheduler = BasicTaskScheduler::createNew();
+	TaskScheduler* scheduler = DebugTaskScheduler::createNew();
 	//UserAuthenticationDatabase* authDB = NULL;//not used
 	BasicUsageEnvironment* env = BasicUsageEnvironment::createNew(*scheduler);
 
 	//TODO：总之先固定使用8554
-	RTSPServer* rtspServer = RTSPServer::createNew(*env, 8554);
-	Log::log("Create New RtspServer over port %d\n", 8554);
+	int serverport = 8554;
+	Log::log("Create New RtspServer over port %d\n", serverport);
+	RTSPServer* rtspServer = RTSPServer::createNew(*env, serverport);
 
 	ServerMediaSession* sms = ServerMediaSession::createNew(*env, "StreamName");
 	sms->addSubsession(MSubsession::createNew(*env));
@@ -143,8 +396,26 @@ void MSubsession::getStreamParameters(unsigned clientSessionId, netAddressBits c
 
 void MSubsession::startStream(unsigned clientSessionId, void* streamToken, TaskFunc* rtcpRRHandler, void* rtcpRRHandlerClientData, unsigned short& rtpSeqNum, unsigned& rtpTimestamp, ServerRequestAlternativeByteHandler* serverRequestAlternativeByteHandler, void* serverRequestAlternativeByteHandlerClientData)
 {
-	Log::log("MSubsession::startStream() called...\n");
-	OnDemandServerMediaSubsession::startStream(clientSessionId, streamToken, rtcpRRHandler, serverRequestAlternativeByteHandlerClientData, rtpSeqNum, rtpTimestamp, serverRequestAlternativeByteHandler, serverRequestAlternativeByteHandlerClientData);
+	Log::log("MSubsession::startStream() called:%p...\n", &MSubsession::startStream);
+	Log::log("streamToken %p, rtcpRRHandler %p, rtcpRRHandlerClientData %p \n, \
+		serverRequestAlternativeByteHandler %p, serverRequestAlternativeByteHandlerClientData %p\n",
+		streamToken, rtcpRRHandler, rtcpRRHandlerClientData, serverRequestAlternativeByteHandler, serverRequestAlternativeByteHandlerClientData);
+	//OnDemandServerMediaSubsession::startStream(clientSessionId, streamToken, rtcpRRHandler, serverRequestAlternativeByteHandlerClientData, rtpSeqNum, rtpTimestamp, serverRequestAlternativeByteHandler, serverRequestAlternativeByteHandlerClientData);
+	/////////////////////////COPYED FROM LIVE555//////////////////////////////////
+	StreamState* streamState = (StreamState*)streamToken;
+	Destinations* destinations
+		= (Destinations*)(fDestinationsHashTable->Lookup((char const*)clientSessionId));
+	if (streamState != NULL) {
+		Log::log("\n");
+		streamState->startPlaying(destinations, clientSessionId,
+			rtcpRRHandler, rtcpRRHandlerClientData,
+			serverRequestAlternativeByteHandler, serverRequestAlternativeByteHandlerClientData);
+		RTPSink* rtpSink = streamState->rtpSink(); // alias
+		if (rtpSink != NULL) {
+			rtpSeqNum = rtpSink->currentSeqNo();
+			rtpTimestamp = rtpSink->presetNextTimestamp();
+		}
+	}
 }
 
 VEncoder_h264* VEncoder_h264::createNew()
@@ -280,14 +551,18 @@ VEncoder_h264::~VEncoder_h264()
 
 Buffer* VEncoder_h264::get_first_empty_buffer()
 {
-	Log::log("Try Get first empty buffer during frame %d. cur first_empty: %d, cur first_used: %d\n", curfame.GetCurFrame(), first_empty, first_used);
+	double cur_time = (float)timeGetTime();
+	Log::log("Try Get first empty buffer during frame %d. cur first_empty: %d, cur first_used: %d. cur_time:%f\n", 
+		curfame.GetCurFrame(), first_empty, first_used, cur_time);
 	Buffer* result = nullptr;
 	unique_lock<mutex> lock(empty_mutex);
 	while (first_empty == first_used) {
 		empty_cv.wait(lock);
 	}
 	result = buffers[first_empty];
-	Log::log("Get first empty buffer during frame %d. idx: %d\n", curfame.GetCurFrame(), first_empty);
+	cur_time = (float)timeGetTime();
+	Log::log("Get first empty buffer during frame %d. idx: %d, cur_time: %f\n", 
+		curfame.GetCurFrame(), first_empty, cur_time);
 	return result;
 }
 
@@ -295,14 +570,18 @@ Buffer* VEncoder_h264::get_first_empty_buffer()
 Buffer* VEncoder_h264::get_first_used_buffer()
 {
 	//TODO: deal with no first_used situation;
-	Log::log("Try Get first used buffer during frame %d. cur first_empty: %d, cur first_used: %d\n", curfame.GetCurFrame(), first_empty, first_used);
+	double cur_time = (float)timeGetTime();
+	Log::log("Try Get first used buffer during frame %d. cur first_empty: %d, cur first_used: %d, cur_time: %f\n", 
+		curfame.GetCurFrame(), first_empty, first_used, cur_time);
 	Buffer* result = nullptr;
 	unique_lock<mutex> lock(used_mutex);
 	while (first_used < 0) {
 		used_cv.wait(lock);
 	}
 	result = buffers[first_used];
-	Log::log("Get first used buffer during frame %d. idx: %d\n", curfame.GetCurFrame(), first_used);
+	cur_time = (float)timeGetTime();
+	Log::log("Get first used buffer during frame %d. idx: %d, cur_time: %f\n", 
+		curfame.GetCurFrame(), first_used, cur_time);
 	return result;
 }
 
@@ -451,18 +730,18 @@ bool VEncoder_h264::CopyD3D9RenderingFrame(IDirect3DDevice9* pDevice)
 		Log::log("ERROR: failed to LockRect in CopyD3DFrame\n");
 		return false;
 	}
-	Log::log_notime("\tLock Rect.\n");
+	Log::log("\tLock Rect in CopyingFrame.\n");
 	char *src = (char*)lockedRect.pBits;
 	int stride = encoder_width << 2;//rgba
 	Buffer* desBuffer = get_first_empty_buffer();
-	Log::log_notime("\tstride(srcRect): %d, pitch: %d\n", stride, lockedRect.Pitch);
+	Log::log("\tstride(srcRect): %d, pitch: %d\n", stride, lockedRect.Pitch);
 	//TODO: this may be implemented multi-threadly
 	for (int i = 0; i < game_height; i++) {
 		src += stride;
 		desBuffer->write_byte_arr(src, stride);
 		src += stride;
 	}
-	Log::log_notime("\tWrite rect to buffer end.\n");
+	Log::log("\tWrite rect to buffer end in CopyingFrame.\n");
 	if (first_used == -1) {
 		first_used = first_empty;
 		used_cv.notify_one();
@@ -494,3 +773,6 @@ H264Sink::~H264Sink()
 {
 
 }
+
+
+

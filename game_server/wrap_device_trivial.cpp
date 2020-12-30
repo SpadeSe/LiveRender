@@ -19,7 +19,8 @@
 
 #include "EnumStrs.h"
 #include "rtsp_server.h"
-
+#include <chrono>
+#include <thread>
 //used global variables
 extern VEncoder_h264* g_encoder;
 
@@ -224,11 +225,17 @@ STDMETHODIMP WrapperDirect3DDevice9::Present(THIS_ CONST RECT* pSourceRect,CONST
 	frame_cnt++;
 
 	//limit it to max_fps
+	static double slept = 0;
 	double to_sleep = 1000.0 / cs.config_->max_fps_ * frame_cnt - elapse_time;
 	if(to_sleep > 0) {
 		//DWORD t1 = timeGetTime();
-
-		Sleep((DWORD)to_sleep);
+		double temp_cur = float(timeGetTime());
+		Log::log("sleep in WrapperDirect3DDevice9::Present() for %f. cur_time: %f\n", to_sleep, temp_cur);
+		std::this_thread::sleep_for(std::chrono::milliseconds((DWORD)to_sleep));
+		slept += to_sleep;
+		//Sleep((DWORD)to_sleep);
+		temp_cur = float(timeGetTime());
+		Log::log("sleep in WrapperDirect3DDevice9::Present() end. total: %f. cur_time: %f\n", slept, temp_cur);
 		//DWORD t2 = timeGetTime();
 
 		//Log::slog("WrapperDirect3DDevice9::Present(), exp=%d, slp=%d\n", (DWORD)to_sleep, t2 - t1);
@@ -247,7 +254,7 @@ STDMETHODIMP WrapperDirect3DDevice9::Present(THIS_ CONST RECT* pSourceRect,CONST
 	cs.end_command();
 
 	is_even_frame_ ^= 1;
-	
+	Log::log("devicePresent start...\n");
 	HRESULT hh = m_device->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
 	Log::log("devicePresent end. call Copying Frame in WrapperDirect3DDevice9::Present():\n");
 	if (g_encoder) {
