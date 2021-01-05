@@ -53,6 +53,7 @@ public:
 	bool decodeVideo(uint8_t* /*in*/ srcBuffer, int inbuffer_size, uint8_t* outBuffer);
 		//因为填进buffer的时候没有调用buffer的write而是直接传了指针
 private:
+	AVBufferRef* hw_device_ctx;
 	AVCodecContext* codecCtx;
 	AVCodec* codec;
 	AVPacket avpkt;

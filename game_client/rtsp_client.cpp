@@ -16,9 +16,11 @@ int rtp_packet_reordering_threshold = 300000;//300ms
 int server_port = 8554;
 AVPixelFormat outFormat = AVPixelFormat::AV_PIX_FMT_BGR0;
 Uint32 sdlFormat = SDL_PIXELFORMAT_ARGB8888;
+AVHWDeviceType hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2;
 //global variables
 char eventLoopWatchVariable = 1;
 VDecoder_H264* g_decoder = nullptr;
+AVPixelFormat hw_pix_fmt;
 
 uint8_t* decoded_pool[MAX_DECODE_POOL];
 mutex pool_in_mutex, pool_out_mutex;
@@ -279,7 +281,7 @@ void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes
 	int count = 0;
 	while (ret) {
 		count++;
-		Log::log("decode one frame after getting frame. idx: %d\n", count);
+		Log::log("decode one frame in after getting frame. idx: %d\n", count);
 		if (pool_first_used == -1) {
 			pool_first_used = pool_first_empty;
 			pool_out_cv.notify_one();
@@ -566,8 +568,24 @@ void VDecoder_H264::SetDecodeExtraData(uint8_t* extradata, int extradatasize)
 	
 }
 
+enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
+	const enum AVPixelFormat* pix_fmts)
+{
+	/*Log::log("get_hw_format() called.\n");
+	const enum AVPixelFormat* p;
+
+	for (p = pix_fmts; *p != -1; p++) {
+		if (*p == hw_pix_fmt)
+			return *p;
+	}
+
+	Log::log("Failed to get HW surface format.\n");
+	return AV_PIX_FMT_NONE;*/
+	return AVPixelFormat::AV_PIX_FMT_DXVA2_VLD;
+}
 VDecoder_H264::VDecoder_H264()
 {
+	int ret;
 	//init decoder pool buffer
 	for (int i = 0; i < MAX_DECODE_POOL; i++) {
 		decoded_pool[i] = new uint8_t[DECODE_POOL_SIZE];
@@ -579,10 +597,31 @@ VDecoder_H264::VDecoder_H264()
 		Log::log("Error: failed to find h264 codec");
 	}
 	Log::log("VDecoder_H264::VDecoder_H264() codec init end.\n");
+	Log::log("VDecoder_H264::VDecoder_H264() start creating hwctx.\n");
+	ret = av_hwdevice_ctx_create(&hw_device_ctx, hwtype, nullptr, nullptr, 0);
+	if (ret < 0) {
+		Log::log("Error: failed to create hwdevice_ctx.\n");
+	}
+	Log::log("VDecoder_H264::VDecoder_H264() hwdevice_ctx create end. Start find hw_pix_fmt\n");
+	for (int i = 0; ; i++) {
+		const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
+		if (!config) {
+			Log::log("Decoder %s does not support device type %s.\n",
+				codec->name, av_hwdevice_get_type_name(hwtype));
+			ret = -1; break;
+		}
+		if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+			config->device_type == hwtype) {
+			hw_pix_fmt = config->pix_fmt;
+			Log::log("hw_pix_fmt: %d, AV_PIX_FMT_YUV420P: %d\n", hw_pix_fmt, AVPixelFormat::AV_PIX_FMT_DXVA2_VLD);
+			ret = 0; break;
+		}
+	}
 	codecCtx = avcodec_alloc_context3(codec);
 	if (!codec) {
 		Log::log("Error: failed to alloc context3");
 	}
+	codecCtx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
 	codecCtx->width = decoder_width;
 	codecCtx->height = decoder_height;
 	codecCtx->time_base.num = 1;
@@ -592,22 +631,27 @@ VDecoder_H264::VDecoder_H264()
 	//codecCtx->gop_size = 1;
 	codecCtx->extradata_size = decode_extradatasize;
 	codecCtx->extradata = (uint8_t*)av_malloc(decode_extradatasize + AV_INPUT_BUFFER_PADDING_SIZE);
-	memcpy(codecCtx->extradata, decode_extradata, decode_extradatasize);
-	int ret = avcodec_open2(codecCtx, codec, NULL);
+	memcpy(codecCtx->extradata, decode_extradata, decode_extradatasize);//WARNING: make sure decode_extradata is inited!
+	ret = avcodec_open2(codecCtx, codec, NULL);
 	Log::log("VDecoder_H264::VDecoder_H264() codecCtx init end.\n");
 	//frame = av_frame_alloc();
 	av_init_packet(&avpkt);
 	Log::log("VDecoder_H264::VDecoder_H264() avpkt init end.\n");
 
 	swsCtx = nullptr;
-	swsCtx = sws_getCachedContext(swsCtx,
+	swsCtx = sws_getContext(
 		decoder_width, decoder_height,
-		AVPixelFormat::AV_PIX_FMT_YUV420P,
+		AVPixelFormat::AV_PIX_FMT_NV12,//AVPixelFormat::AV_PIX_FMT_YUV420P,
 		game_width, game_height,
 		outFormat,//TODO:the format here!
 		SWS_BICUBIC,
 		NULL, NULL, NULL);
-	Log::log("VDecoder_H264::VDecoder_H264() swsCtx init end.\n");
+	if (swsCtx == nullptr) {
+		Log::log("Error: failed to get swsCtx.\n");
+	}
+	else {
+		Log::log("VDecoder_H264::VDecoder_H264() swsCtx init end.\n");
+	}
 	Log::log("VDecoder_H264::VDecoder_H264() end.\n");
 }
 
@@ -628,56 +672,76 @@ bool VDecoder_H264::decodeVideo(uint8_t* srcBuffer, int inbuffer_size,  /* in */
 	Log::log("Start decoding a frame...\n");
 	Log::log("avpkt: %p, avpkt.data: %p, srcBuffer: %p \n",&avpkt, avpkt.data, srcBuffer);
 	int ret;
-
-	if (srcBuffer != nullptr && inbuffer_size > 0) {
-		avpkt.data = srcBuffer;
-		avpkt.size = inbuffer_size;
-
-
-		ret = avcodec_send_packet(codecCtx, &avpkt);
-		if (ret) {
-			Log::log("Error: failed to send_packet in decodeVideo: %d\n", ret);
-			return false;
-		}
-		Log::log("send packet end. ret: %d\n", ret);
-	}
-	else {
-		Log::log("no packet to send... receive frame directly.\n");
-	}
-	
-
-	AVFrame* yuvFrame = av_frame_alloc();
-	ret = avcodec_receive_frame(codecCtx, yuvFrame);
-	if (ret) {
-		Log::log("Error: failed to receive_frame in decodeVideo: %d\n", ret);
-		return false;
-	}
-	Log::log("receive frame end. ret: %d, yuvFrame height: %d, yuvFrame width: %d, yuvFrame data: %p\n", 
-		ret, yuvFrame->height, yuvFrame->width, yuvFrame->data);
-	
-	//此处暂时和server的encoder相同
+	AVFrame* yuvFrame_gpu = av_frame_alloc();
+	AVFrame* yuvFrame_cpu = av_frame_alloc();
 	AVFrame* rgbFrame = av_frame_alloc();
-	rgbFrame->format = outFormat;
-	rgbFrame->width = decoder_width;
-	rgbFrame->height = decoder_height;
-	ret = av_frame_get_buffer(rgbFrame, 0);
-	if (ret) {
-		Log::log("Error: failed to av_frame_get_buffer(rgbFrame, 0).\n");
-		return false;
-	}
-	Log::log("decoder_height: %d, decoder_width: %d\n", decoder_height, decoder_width);
-	ret = sws_scale(swsCtx, yuvFrame->data, yuvFrame->linesize, 0, decoder_height,
-		rgbFrame->data, rgbFrame->linesize);
-	if (ret == 0) {
-		Log::log("Error: failed to sws_scale in decodeVideo\n");
-		return false;
-	}
-	Log::log("sws_scale end. ret(slice height):%d\n", ret);
-	/*if (codecCtx->pix_fmt == AVPixelFormat::AV_PIX_FMT_YUV420P) {
+	AVFrame* yuvFrame;
+	do 
+	{
+		if (srcBuffer != nullptr && inbuffer_size > 0) {
+			avpkt.data = srcBuffer;
+			avpkt.size = inbuffer_size;
 
-	}*/
-	memcpy(outBuffer, rgbFrame->data[0], (decoder_width * decoder_height) << 2);
-	//outBuffer = rgbFrame->data[0];//因为是rgb所以直接用[0]。。。？
-	Log::log("Decoding a frame end. \n");
-	return true;
+			ret = avcodec_send_packet(codecCtx, &avpkt);
+			if (ret) {
+				Log::log("Error: failed to send_packet in decodeVideo: %d\n", ret);
+				ret = -1; break;
+			}
+			Log::log("send packet end. ret: %d\n", ret);
+		}
+		else {
+			Log::log("no packet to send... receive frame directly.\n");
+		}
+
+		ret = avcodec_receive_frame(codecCtx, yuvFrame_gpu);
+		if (ret) {
+			Log::log("Error: failed to receive_frame in decodeVideo: %d\n", ret);
+			ret = -1; break;
+		}
+		Log::log("receive frame end. ret: %d, yuvFrame height: %d, yuvFrame width: %d, yuvFrame data: %p, yuvFrame linesize: %d\n",
+			ret, yuvFrame_gpu->height, yuvFrame_gpu->width, yuvFrame_gpu->data, yuvFrame_gpu->linesize);
+
+		ret = av_hwframe_transfer_data(yuvFrame_cpu, yuvFrame_gpu, 0);
+		if (ret < 0) {
+			Log::log("Error: failed to transferring the data to system memory，ret: %d\n", ret);
+			break;
+		}
+		Log::log("hwframe_transfer_data end. ret: %d, yuvFrame height: %d, yuvFrame width: %d, yuvFrame data: %p, yuvFrame linesize: %d\n",
+			ret, yuvFrame_cpu->height, yuvFrame_cpu->width, yuvFrame_cpu->data, yuvFrame_cpu->linesize);
+		yuvFrame = yuvFrame_cpu;//这里之后可以改成加设置开关
+
+		//此处暂时和server的encoder相同
+		rgbFrame->format = outFormat;
+		rgbFrame->width = decoder_width;
+		rgbFrame->height = decoder_height;
+		ret = av_frame_get_buffer(rgbFrame, 0);
+		if (ret < 0) {
+			Log::log("Error: failed to av_frame_get_buffer(rgbFrame1, 0).\n");
+			break;
+		}
+		Log::log("decoder_height: %d, decoder_width: %d\n", decoder_height, decoder_width);
+		ret = sws_scale(swsCtx, yuvFrame->data, yuvFrame->linesize, 0, yuvFrame_cpu->height,
+			rgbFrame->data, rgbFrame->linesize);
+		if (ret <= 0) {
+			Log::log("Error: failed to sws_scale in decodeVideo\n");
+			ret = -1; break;
+		}
+		Log::log("sws_scale end. ret(slice height):%d\n", ret);
+		/*if (codecCtx->pix_fmt == AVPixelFormat::AV_PIX_FMT_YUV420P) {
+
+		}*/
+		memcpy(outBuffer, rgbFrame->data[0], (decoder_width * decoder_height) << 2);
+		//outBuffer = rgbFrame->data[0];//因为是rgb所以直接用[0]。。。？
+		Log::log("Decoding a frame success. do release work\n");
+		ret = 0;
+	} while (false);
+	
+	av_frame_free(&rgbFrame);
+	av_frame_free(&yuvFrame_gpu);
+	av_frame_free(&yuvFrame_cpu);
+	Log::log("Decode release work end.\n");
+	if (ret == 0)
+		return true;
+	else
+		return false;
 }

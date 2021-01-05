@@ -264,10 +264,10 @@ DebugTaskScheduler::DebugTaskScheduler(unsigned maxSchedulerGranularity)
 void liveserver_main(){
 
 	FILE *se, *so;
-	if (freopen_s(&se, "stderr.txt", "w", stderr)) {
+	if (freopen_s(&se, "stderr.log", "w", stderr)) {
 		Log::log("failed to reopen stderr");
 	};
-	if (freopen_s(&so, "stdout.txt", "w", stdout)) {
+	if (freopen_s(&so, "stdout.log", "w", stdout)) {
 		Log::log("failed to reopen stdout");
 	};
 
