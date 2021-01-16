@@ -17,6 +17,8 @@ const int video_bitrate = 3000000; //bit. used for estBitrate
 const int max_out_packet_size = 2000000; //8000000;//used when create new stream source
 const int rgb_buffer_size = 8000000; //bit. the size of rgb_buffer. remember to divide by 4. Too small will lead to exception in copy
 AVPixelFormat outFormat = AVPixelFormat::AV_PIX_FMT_BGR0;
+AVHWDeviceType hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2;
+AVPixelFormat hwfmt = AVPixelFormat::AV_PIX_FMT_DXVA2_VLD;
 
 CurFrame curfame;
 
@@ -347,6 +349,11 @@ void FSource::doGetNextFrame()
 	//else {
 	//	fFrameSize = 0;
 	//}
+	static int no_encoded_count = 0;
+	if (fFrameSize == 0) {
+		no_encoded_count++;
+		Log::log("no output in doGetNextFrame() count : %d\n", no_encoded_count);
+	}
 	Log::log("FSource get frame size: %d\n", fFrameSize);
 	FramedSource::afterGetting(this);
 }
@@ -429,9 +436,15 @@ VEncoder_h264* VEncoder_h264::createNew()
 	return new VEncoder_h264();
 }
 
+static enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
+	const enum AVPixelFormat* pix_fmts)
+{
+	return AVPixelFormat::AV_PIX_FMT_DXVA2_VLD;
+}
 VEncoder_h264::VEncoder_h264()
 {
 	Log::log("VEncoder_h264::VEncoder_h264() called...\n");
+	int ret = 0;
 	//init buffers
 	for (int i = 0; i < MAX_RGBBUFFER; i++) {
 		buffers[i] = new Buffer(rgb_buffer_size / 4);
@@ -444,6 +457,20 @@ VEncoder_h264::VEncoder_h264()
 	}
 	Log::log("find encoder end.\n");
 	codecCtx = avcodec_alloc_context3(codec);
+	if (cs.config_->use_hw_) {
+		codecCtx->get_format = get_hw_format;
+		Log::log("VEncoder_h264 start creating hwctx.\n");
+		ret = av_hwdevice_ctx_create(&hw_device_ctx, hwtype, nullptr, nullptr, 0);
+		if (ret < 0) {
+			Log::log("Error: failed to create hwdevice_ctx.\n");
+		}
+		Log::log("VDecoder_H264::VDecoder_H264() hwdevice_ctx create end.\n");
+		
+		codecCtx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+	}
+	else {
+		hw_device_ctx = nullptr;
+	}
 	codecCtx->width = encoder_width;
 	codecCtx->height = encoder_height;
 	codecCtx->time_base.num = 1;
@@ -456,7 +483,7 @@ VEncoder_h264::VEncoder_h264()
 	Log::log("encoder gop size: %d\n", cs.config_->encoder_gop_size_);
 	codecCtx->gop_size = cs.config_->encoder_gop_size_;
 	
-	int ret = avcodec_open2(codecCtx, codec, NULL);
+	ret = avcodec_open2(codecCtx, codec, NULL);
 	if (ret < 0) {
 		Log::log("Error: failed to avcodec_open2 in init VEncoder_h264.ret=%d\n", &ret);
 	}
@@ -474,7 +501,7 @@ VEncoder_h264::VEncoder_h264()
 	int extradatalen = codecCtx->extradata_size;
 	Log::log("codecCtx->extradata_size: %d\n", extradatalen);
 	spspps = new spsppsdata{};
-	for (int i = 2; i < extradatalen; i++) {//因为不会很长而且只过一次，所以这样问题不大又简单
+	for (int i = 2; i < extradatalen; i++) {
 		Log::log_notime("%02x ", extradata[i]);
 		if (extradata[i] == 0x67 && extradata[i - 2] == 0) {
 			spspps->sps = &extradata[i];
@@ -670,7 +697,7 @@ int VEncoder_h264::get_encoded(uint8_t* dst, unsigned* size)
 	av_frame_free(&rgbFrame);
 	av_frame_free(&yuvFrame);
 	av_packet_free(&encoded_packet);
-	Log::log("VEncoder_h264 encode release resources end.");
+	Log::log("VEncoder_h264 encode release resources end.\n");
 	return *size;
 }
 

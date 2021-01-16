@@ -92,6 +92,7 @@ private:
 	condition_variable used_cv;
 
 	AVCodec* codec;
+	AVBufferRef* hw_device_ctx;
 	AVCodecContext* codecCtx;
 	SwsContext* swsCtx;
 	spsppsdata* spspps;

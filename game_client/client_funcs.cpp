@@ -50,6 +50,95 @@ HRESULT StartClientRTSPThread() {
 	return S_OK;
 }
 
+//TODO£ºfinish works in present
+HRESULT FakedPresent() {
+	HRESULT hr;
+	Log::log("Faked Present called\n");
+#if 1
+	static double last_time = timeGetTime();
+
+	static double elapse_time = 0.0;
+	static double frame_cnt = 0.0;
+	static double fps = 0.0;
+
+	double frame_time = 0.0f;
+
+	double cur_time = (float)timeGetTime();
+	elapse_time += (cur_time - last_time);
+	frame_time = cur_time - last_time;
+	last_time = cur_time;
+
+	frame_cnt++;
+
+	if (elapse_time >= 1000.0) {
+		fps = frame_cnt * 1000.0 / elapse_time;
+		frame_cnt = 0;
+		elapse_time = 0;
+		Log::slog("Faked Present, fps=%.3f frame time:%.3f\n", fps, frame_time);
+	}
+#endif
+	static float last_present = 0;
+	float now_present = timeGetTime();
+
+	Log::slog("FakedPresent(), present gap=%.4f\n", now_present - last_present);
+
+	static int frameCount = 0;
+	static float csDelta = 0;
+	float t1 = timeGetTime();
+	int frameID = cc.read_int();
+	const RECT* pSourceRect = (RECT*)(cc.read_int());
+	const RECT* pDestRect = (RECT*)(cc.read_int());
+	HWND hDestWindowOverride = (HWND)(cc.read_int());
+	const RGNDATA* pDirtyRegion = (RGNDATA*)(cc.read_int());
+	float serverSendTime = cc.read_float();
+	float serverFrameTime = cc.read_float();
+	frameCount++;
+	csDelta += now_present - serverSendTime;
+	if (frameID == 0) {
+		Log::log("FakedPresent, frameCount: %d, clientServerTotalDelay: %.4f, avgDelay: %.4f\n", frameCount, csDelta, FLOAT(csDelta) / frameCount);
+		frameCount = 0;
+		csDelta = 0;
+	}
+	//return cur_device->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+	GET_DEVICE();
+
+	assert(cur_device);
+	//IDirect3DSurface9 *renderingSurface = NULL;
+	//static IDirect3DSurface9 *newSurface = NULL;
+	//cur_device->GetRenderTarget(0, &renderingSurface);
+	//if (newSurface == NULL) {
+	//	D3DSURFACE_DESC desc;
+	//	renderingSurface->GetDesc(&desc);
+	//	hr = cur_device->CreateOffscreenPlainSurface(desc.Width, desc.Height,
+	//		desc.Format, D3DPOOL::D3DPOOL_SYSTEMMEM, &newSurface, NULL);
+	//}
+	//cur_device->GetRenderTargetData(renderingSurface, newSurface);
+	//hr = cur_device->Present(NULL, NULL, NULL, NULL);
+	//D3DVIEWPORT9 viewport;
+	//cur_device->GetViewport(&viewport);
+	//Log::log("Prev ViewPort-- x:%d, y:%d, width:%d, height:%d\n", viewport.X, viewport.Y, viewport.Width, viewport.Height);
+	//D3DVIEWPORT9 tempport = viewport;
+	//tempport.X = tempport.Width;
+	//Log::log("New ViewPort-- x:%d, y:%d, width:%d, height:%d\n", tempport.X, tempport.Y, tempport.Width, tempport.Height);
+	//cur_device->GetRenderTarget(0, &renderingSurface);
+	//hr = cur_device->SetViewport(&tempport);
+	//if (FAILED(hr)) {
+	//	Log::log("Failed to set tempport.");
+	//}
+	//cur_device->UpdateSurface(newSurface, NULL, renderingSurface, NULL);
+	//cur_device->Present(NULL, NULL, NULL, NULL);
+	//hr = cur_device->SetViewport(&viewport);
+
+	hr = merge_Present(cur_device);
+	//hr = cur_device->Present(NULL,NULL,NULL,NULL);
+
+	float t2 = timeGetTime();
+	Log::log("FakedPresent(), frameid: %d, client del_time=%.4f, server del_time: %.4f, differ: %.4f\n",
+		frameID, now_present - last_present, serverFrameTime, now_present - last_present - serverFrameTime);
+	last_present = now_present;
+	return hr;
+}
+
 HRESULT FakeDCreateWindow() {
 	Log::slog("FakedCreateWindow() called\n");
 	TCHAR szAppName[]= TEXT("HelloWin");
@@ -128,94 +217,7 @@ HRESULT FakedClear() {
 		return cur_device->Clear(count, NULL, Flags, color, Z, stencil);
 }
 
-//TODO£ºfinish works in present
-HRESULT FakedPresent() {
-	HRESULT hr;
-	Log::log("Faked Present called\n");
-#if 1
-	static double last_time = timeGetTime();
 
-	static double elapse_time = 0.0;
-	static double frame_cnt = 0.0;
-	static double fps = 0.0;
-
-	double frame_time = 0.0f;
-
-	double cur_time = (float)timeGetTime();
-	elapse_time += (cur_time - last_time);
-	frame_time = cur_time - last_time;
-	last_time = cur_time;
-
-	frame_cnt++;
-
-	if(elapse_time >= 1000.0) {
-		fps = frame_cnt * 1000.0 / elapse_time;
-		frame_cnt = 0;
-		elapse_time = 0;
-		Log::slog("Faked Present, fps=%.3f frame time:%.3f\n", fps,frame_time);
-	}
-#endif
-	static float last_present = 0;
-	float now_present = timeGetTime();
-
-	Log::slog("FakedPresent(), present gap=%.4f\n", now_present - last_present);
-
-	static int frameCount = 0;
-	static float csDelta = 0;
-	float t1 = timeGetTime();
-	int frameID = cc.read_int();
-	const RECT* pSourceRect = (RECT*)(cc.read_int());
-	const RECT* pDestRect = (RECT*)(cc.read_int());
-	HWND hDestWindowOverride = (HWND)(cc.read_int());
-	const RGNDATA* pDirtyRegion = (RGNDATA*)(cc.read_int());
-	float serverSendTime = cc.read_float();
-	float serverFrameTime = cc.read_float();
-	frameCount++;
-	csDelta += now_present - serverSendTime;
-	if(frameID == 0){
-		Log::log("FakedPresent, frameCount: %d, clientServerTotalDelay: %.4f, avgDelay: %.4f\n", frameCount, csDelta, FLOAT(csDelta) / frameCount);
-		frameCount = 0;
-		csDelta = 0;
-	}
-	//return cur_device->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
-	GET_DEVICE();
-
-	assert(cur_device);
-	//IDirect3DSurface9 *renderingSurface = NULL;
-	//static IDirect3DSurface9 *newSurface = NULL;
-	//cur_device->GetRenderTarget(0, &renderingSurface);
-	//if (newSurface == NULL) {
-	//	D3DSURFACE_DESC desc;
-	//	renderingSurface->GetDesc(&desc);
-	//	hr = cur_device->CreateOffscreenPlainSurface(desc.Width, desc.Height,
-	//		desc.Format, D3DPOOL::D3DPOOL_SYSTEMMEM, &newSurface, NULL);
-	//}
-	//cur_device->GetRenderTargetData(renderingSurface, newSurface);
-	//hr = cur_device->Present(NULL, NULL, NULL, NULL);
-	//D3DVIEWPORT9 viewport;
-	//cur_device->GetViewport(&viewport);
-	//Log::log("Prev ViewPort-- x:%d, y:%d, width:%d, height:%d\n", viewport.X, viewport.Y, viewport.Width, viewport.Height);
-	//D3DVIEWPORT9 tempport = viewport;
-	//tempport.X = tempport.Width;
-	//Log::log("New ViewPort-- x:%d, y:%d, width:%d, height:%d\n", tempport.X, tempport.Y, tempport.Width, tempport.Height);
-	//cur_device->GetRenderTarget(0, &renderingSurface);
-	//hr = cur_device->SetViewport(&tempport);
-	//if (FAILED(hr)) {
-	//	Log::log("Failed to set tempport.");
-	//}
-	//cur_device->UpdateSurface(newSurface, NULL, renderingSurface, NULL);
-	//cur_device->Present(NULL, NULL, NULL, NULL);
-	//hr = cur_device->SetViewport(&viewport);
-
-	hr = displayPresented(cur_device);
-	//hr = cur_device->Present(NULL,NULL,NULL,NULL);
-
-	float t2 = timeGetTime();
-	Log::log("FakedPresent(), frameid: %d, client del_time=%.4f, server del_time: %.4f, differ: %.4f\n", 
-		frameID, now_present - last_present, serverFrameTime, now_present - last_present - serverFrameTime);
-	last_present = now_present;
-	return hr;
-}
 
 HRESULT FakedSetTransform() {
 	//D3DTRANSFORMSTATETYPE State,CONST D3DMATRIX* pMatrix

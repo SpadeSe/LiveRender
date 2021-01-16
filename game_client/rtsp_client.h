@@ -38,7 +38,7 @@ extern int decoder_width, decoder_height;
 //uint8_t* get_pool_used_buffer();
 
 //应当在fakedpresent中来调用，替换原本的present
-HRESULT displayPresented(IDirect3DDevice9* pDevice);
+HRESULT merge_Present(IDirect3DDevice9* pDevice);
 
 bool initSDL();
 int client_rtsp_thread_main();
@@ -51,7 +51,7 @@ protected:
 	VDecoder_H264();
 	~VDecoder_H264();
 public:
-	bool decodeVideo(uint8_t* /*in*/ srcBuffer, int inbuffer_size, uint8_t* outBuffer);
+	bool get_decoded(uint8_t* /*in*/ srcBuffer, int inbuffer_size, uint8_t* outBuffer);
 		//因为填进buffer的时候没有调用buffer的write而是直接传了指针
 private:
 	AVBufferRef* hw_device_ctx;

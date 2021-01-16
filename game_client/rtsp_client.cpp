@@ -17,10 +17,10 @@ int server_port = 8554;
 AVPixelFormat outFormat = AVPixelFormat::AV_PIX_FMT_BGR0;
 Uint32 sdlFormat = SDL_PIXELFORMAT_ARGB8888;
 AVHWDeviceType hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2;
+AVPixelFormat hwfmt = AVPixelFormat::AV_PIX_FMT_DXVA2_VLD;
 //global variables
 char eventLoopWatchVariable = 1;
 VDecoder_H264* g_decoder = nullptr;
-AVPixelFormat hw_pix_fmt;
 
 uint8_t* decoded_pool[MAX_DECODE_POOL];
 mutex pool_in_mutex, pool_out_mutex;
@@ -134,7 +134,7 @@ int client_rtsp_thread_main()
 }
 
 
-HRESULT displayPresented(IDirect3DDevice9* pDevice)
+HRESULT merge_Present(IDirect3DDevice9* pDevice)
 {
 	Log::log("Start presenting......\n");
 	//Finished：copy out the rendered part
@@ -275,7 +275,7 @@ void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes
 	//decode
 	//uint8_t* decoded;
 
-	bool ret = decoder->decodeVideo(get_first_used_buffer(), frameSize, get_pool_empty_buffer());
+	bool ret = decoder->get_decoded(get_first_used_buffer(), frameSize, get_pool_empty_buffer());
 	first_used = (first_used + 1) % MAX_RECEIVE_BUFFER;
 	if (first_used == first_empty) {
 		first_used = -1;//所有待编码的全部编完了。
@@ -284,6 +284,7 @@ void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes
 
 	//继续解码同一个packet中可能有的frame
 	//TODO: 这里可以非阻塞式进行
+	static int no_output_count = 0;
 	int count = 0;
 	while (ret) {
 		count++;
@@ -293,11 +294,12 @@ void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes
 			pool_out_cv.notify_one();
 		}
 		pool_first_empty = (pool_first_empty + 1) % MAX_DECODE_POOL;
-		ret = decoder->decodeVideo(nullptr, 0, get_pool_empty_buffer());
+		ret = decoder->get_decoded(nullptr, 0, get_pool_empty_buffer());
 	}
 	if (!count)
 	{
-		Log::log("Failed to decode first frame in after getting frame during frame %d\n", curframe.GetCurFrame());
+		no_output_count++;
+		Log::log("no output in fterGettingFrame() count: %d, during frame %d\n",no_output_count, curframe.GetCurFrame());
 	}
 
 	//TODO: display works
@@ -579,7 +581,7 @@ void VDecoder_H264::SetDecodeExtraData(uint8_t* extradata, int extradatasize)
 	
 }
 
-enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
+static enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
 	const enum AVPixelFormat* pix_fmts)
 {
 	/*Log::log("get_hw_format() called.\n");
@@ -592,7 +594,7 @@ enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
 
 	Log::log("Failed to get HW surface format.\n");
 	return AV_PIX_FMT_NONE;*/
-	return AVPixelFormat::AV_PIX_FMT_DXVA2_VLD;
+	return hwfmt;
 }
 VDecoder_H264::VDecoder_H264()
 {
@@ -615,13 +617,14 @@ VDecoder_H264::VDecoder_H264()
 		Log::log("Error: failed to alloc context3");
 	}
 	if (cc.get_config()->use_hw_) {
+		codecCtx->get_format = get_hw_format;
 		Log::log("VDecoder_H264::VDecoder_H264() start creating hwctx.\n");
 		ret = av_hwdevice_ctx_create(&hw_device_ctx, hwtype, nullptr, nullptr, 0);
 		if (ret < 0) {
 			Log::log("Error: failed to create hwdevice_ctx.\n");
 		}
-		Log::log("VDecoder_H264::VDecoder_H264() hwdevice_ctx create end. Start find hw_pix_fmt\n");
-		for (int i = 0; ; i++) {
+		Log::log("VDecoder_H264::VDecoder_H264() hwdevice_ctx create end.\n");
+		/*for (int i = 0; ; i++) { // find hw_pix_fmt
 			const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
 			if (!config) {
 				Log::log("Decoder %s does not support device type %s.\n",
@@ -630,11 +633,11 @@ VDecoder_H264::VDecoder_H264()
 			}
 			if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
 				config->device_type == hwtype) {
-				hw_pix_fmt = config->pix_fmt;
-				Log::log("hw_pix_fmt: %d, AV_PIX_FMT_YUV420P: %d\n", hw_pix_fmt, AVPixelFormat::AV_PIX_FMT_DXVA2_VLD);
+				hwfmt = config->pix_fmt;
+				Log::log("hw_pix_fmt: %d, AV_PIX_FMT_YUV420P: %d\n", hwfmt, AVPixelFormat::AV_PIX_FMT_DXVA2_VLD);
 				ret = 0; break;
 			}
-		}
+		}*/
 		codecCtx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
 	}
 	else {
@@ -660,7 +663,7 @@ VDecoder_H264::VDecoder_H264()
 	swsCtx = sws_getContext(
 		decoder_width, decoder_height,
 		(cc.get_config()->use_hw_)?
-			AVPixelFormat::AV_PIX_FMT_NV12 : AVPixelFormat::AV_PIX_FMT_YUV420P,
+			hwfmt : AVPixelFormat::AV_PIX_FMT_YUV420P,
 		game_width, game_height,
 		outFormat,//TODO:the format here!
 		SWS_BICUBIC,
@@ -676,13 +679,13 @@ VDecoder_H264::VDecoder_H264()
 
 VDecoder_H264::~VDecoder_H264()
 {
-	avcodec_close(codecCtx);
-	av_free(codecCtx);
+	avcodec_free_context(&codecCtx);
 	sws_freeContext(swsCtx);
+	av_buffer_unref(&hw_device_ctx);
 	//av_frame_free(&frame);
 }
 
-bool VDecoder_H264::decodeVideo(uint8_t* srcBuffer, int inbuffer_size,  /* in */
+bool VDecoder_H264::get_decoded(uint8_t* srcBuffer, int inbuffer_size,  /* in */
 	uint8_t* outBuffer) /* out */
 {
 	/*AVPacket* avpkt = new AVPacket();
