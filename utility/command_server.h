@@ -2,6 +2,7 @@
 #define __COMMAND_SERVER__
 #include "command_recorder.h"
 #include "cache.hpp"
+#include "CurFrame.h"
 
 class CommandServer : public Network, public Buffer {
 public:
@@ -27,6 +28,7 @@ public:
 	int flush();
 
 	ServerConfig* config_;
+	CurFrame sfr;//server frame record
 
 private:
 	int op_code;

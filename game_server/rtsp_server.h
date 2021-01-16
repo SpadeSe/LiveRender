@@ -70,7 +70,7 @@ public:
 	~VEncoder_h264();
 	Buffer* get_first_empty_buffer();
 	Buffer* get_first_used_buffer();
-	AVPacket* get_encoded();
+	int get_encoded(uint8_t* dst, unsigned* size);
 	bool CopyD3D9RenderingFrame(IDirect3DDevice9* pDevice);
 	//void StartEncoding();
 	void getExtraData(uint8_t** outData, int* outDataSize);
@@ -83,7 +83,7 @@ protected:
 private:
 	Buffer* buffers[MAX_RGBBUFFER];
 	//Buffer* encoded_buffers[MAX_ENCODEDBUFFER];
-	AVPacket encoded_packet;// s[MAX_RGBBUFFER];
+	//AVPacket encoded_packet;// s[MAX_RGBBUFFER];
 	int first_empty = 0;
 	int first_used = -1;
 	mutex empty_mutex;

@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
 					Log::slog("game_client exit normally.");
 				}
 				else {
-					Log::slog("game client exit, unexpected op_code");
+					Log::slog("game client exit, unexpected op_code: %d\n", op_code);
 				}
 				break;
 			}

@@ -337,11 +337,17 @@ void FSource::doGetNextFrame()
 	//		now the get_encoded will blocked the thread.
 	//		which means the waiting for copyed buffer should be in the get_encoded() func;
 	Log::log("FSource::doGetNextFrame()...\n");
-	AVPacket* pkt = encoder->get_encoded();
-	fFrameSize = pkt->size;
-	Log::log("FSource get frame size: %d\n", fFrameSize);
-	memmove(fTo, pkt->data, fFrameSize);
 
+	encoder->get_encoded(fTo, &fFrameSize);
+	//if (pkt) {
+	//	fFrameSize = pkt->size;
+	//	memmove(fTo, pkt->data, fFrameSize);
+	//	//av_packet_free(&pkt);
+	//}
+	//else {
+	//	fFrameSize = 0;
+	//}
+	Log::log("FSource get frame size: %d\n", fFrameSize);
 	FramedSource::afterGetting(this);
 }
 
@@ -485,8 +491,8 @@ VEncoder_h264::VEncoder_h264()
 	}
 	Log::log_notime("\n");
 	//init packet
-	av_init_packet(&encoded_packet);
-	Log::log("av_init_packet(&encoded_packet) end.\n");
+	//av_init_packet(&encoded_packet);
+	//Log::log("av_init_packet(&encoded_packet) end.\n");
 	//finished
 	Log::log("VEncoder_h264::VEncoder_h264() end. codec: %p, ctx: %p, swsCtx: %p, \n", codec, codecCtx, swsCtx);
 }
@@ -585,73 +591,87 @@ Buffer* VEncoder_h264::get_first_used_buffer()
 	return result;
 }
 
-AVPacket* VEncoder_h264::get_encoded()
+int VEncoder_h264::get_encoded(uint8_t* dst, unsigned* size)
 {
 	Log::log("VEncoder_h264::get_encoded()...\n");
 	Log::log("VEncoder_h264: codec extradatalen:%d\n", codecCtx->extradata_size);
 	Buffer* srcBuffer = get_first_used_buffer();
 
+	int ret = 0;
+	*size = 0;
 	AVFrame* yuvFrame = av_frame_alloc();
+	AVFrame* rgbFrame = av_frame_alloc();
+	AVPacket* encoded_packet = av_packet_alloc();
 	yuvFrame->format = AVPixelFormat::AV_PIX_FMT_YUV420P;
 	yuvFrame->width = encoder_width;
 	yuvFrame->height = encoder_height;
-	int ret = av_frame_get_buffer(yuvFrame, 0);
-	//TODO: error process
-	if (ret) {
-		Log::log("Error: failed to av_frame_get_buffer in get_encoded()\n");
-	}
-	Log::log("av_frame_get_buffer in get_encoded() end.\n");
-	AVFrame* rgbFrame = av_frame_alloc();
-	ret = av_image_fill_arrays(rgbFrame->data, rgbFrame->linesize, (uint8_t *)srcBuffer->get_data_start(), 
-		outFormat, encoder_width, encoder_height, 1);//align for what?
-	/*ret = avpicture_fill((AVPicture *)rgbFrame, (uint8_t *)srcBuffer->get_data_start(), AV_PIX_FMT_ARGB,
-		game_width, game_height);*/
-	if (ret < 0) {
-		Log::log("Error: failed to av_image_fill_arrays in get_encoded()\n");
-	}
-	else {
-		Log::log("the size in bytes required for src: %d\n", ret);
-	}
-	ret = sws_scale(swsCtx, rgbFrame->data, rgbFrame->linesize, 0, game_height,
-		yuvFrame->data, yuvFrame->linesize);
-	Log::log("the height of the output slice(sws_scale): %d\n", ret);
+	do 
+	{
+		ret = av_frame_get_buffer(yuvFrame, 0);
+		//TODO: error process
+		if (ret) {
+			Log::log("Error: failed to av_frame_get_buffer in get_encoded()\n");
+			break;
+		}
+		Log::log("av_frame_get_buffer in get_encoded() end.\n");
+		ret = av_image_fill_arrays(rgbFrame->data, rgbFrame->linesize, (uint8_t*)srcBuffer->get_data_start(),
+			outFormat, encoder_width, encoder_height, 1);//align for what?
+		/*ret = avpicture_fill((AVPicture *)rgbFrame, (uint8_t *)srcBuffer->get_data_start(), AV_PIX_FMT_ARGB,
+			game_width, game_height);*/
+		if (ret < 0) {
+			Log::log("Error: failed to av_image_fill_arrays in get_encoded()\n");
+			break;
+		}
+		else {
+			Log::log("the size in bytes required for src: %d\n", ret);
+		}
+		ret = sws_scale(swsCtx, rgbFrame->data, rgbFrame->linesize, 0, game_height,
+			yuvFrame->data, yuvFrame->linesize);
+		Log::log("the height of the output slice(sws_scale): %d\n", ret);
 
-	av_init_packet(&encoded_packet);
-	Log::log("av_init_packet() end. start send_frame. codec: %p, codecCtx->codec: %p, yuvFrame: %p\n", 
-		codec, codecCtx->codec, yuvFrame);
-	/*int got_packet;
-	ret = avcodec_encode_video2(codecCtx, &encoded_packet, yuvFrame, &got_packet);
-	if (!got_packet) {
-		Log::log("not get packet after avcodec_encode_video2()\n");
-	}
-	if (ret < 0) {
-		Log::log("Failed to avcodec_encode_video2(). ret: %d\n", ret);
-	}*/
-	ret = avcodec_send_frame(codecCtx, yuvFrame);
-	if (ret) {
-		Log::log("Error: failed to send_frame in get_encoded(): %d\n", ret);
-	}
-	else {
-		Log::log("avcodec_send_frame() success.\n");
-	}
-	ret = avcodec_receive_packet(codecCtx, &encoded_packet);
-	if (ret) {
-		Log::log("Error: failed to receive_packet in get_encoded(): %d\n", ret);
-	}
-	else {
-		Log::log("avcodec_receive_packet success.\n");
-	}
-	//Log::log("encoded_packet size:%d\n", encoded_packet.size);
-	srcBuffer->clear();
-	first_used = (first_used + 1) % MAX_RGBBUFFER;
-	if (first_used == first_empty) {
-		first_used = -1;//所有待编码的全部编完了。
-	}
-	empty_cv.notify_one();//编码完一个buffer之后必然空出来一个buffer
-	Log::log("VEncoder_h264 encode end. cur_frame: %d, cur first_empty: %d, cur first_used: %d\n", curfame.GetCurFrame(), first_empty, first_used);
+		av_init_packet(encoded_packet);
+		Log::log("av_init_packet() end. start send_frame. codec: %p, codecCtx->codec: %p, yuvFrame: %p\n",
+			codec, codecCtx->codec, yuvFrame);
+		/*int got_packet;
+		ret = avcodec_encode_video2(codecCtx, &encoded_packet, yuvFrame, &got_packet);
+		if (!got_packet) {
+			Log::log("not get packet after avcodec_encode_video2()\n");
+		}
+		if (ret < 0) {
+			Log::log("Failed to avcodec_encode_video2(). ret: %d\n", ret);
+		}*/
+		ret = avcodec_send_frame(codecCtx, yuvFrame);
+		if (ret) {
+			Log::log("Error: failed to send_frame in get_encoded(): %d\n", ret);
+			break;
+		}
+		else {
+			Log::log("avcodec_send_frame() success.\n");
+		}
+		ret = avcodec_receive_packet(codecCtx, encoded_packet);
+		if (ret) {
+			Log::log("Error: failed to receive_packet in get_encoded(): %d\n", ret);
+			break;
+		}
+		else {
+			Log::log("avcodec_receive_packet success.\n");
+			*size = encoded_packet->size;
+			memmove(dst, encoded_packet->data, encoded_packet->size);
+		}
+		srcBuffer->clear();
+		first_used = (first_used + 1) % MAX_RGBBUFFER;
+		if (first_used == first_empty) {
+			first_used = -1;//所有待编码的全部编完了。
+		}
+		empty_cv.notify_one();//编码完一个buffer之后必然空出来一个buffer
+		Log::log("VEncoder_h264 encode end. cur_frame: %d, cur first_empty: %d, cur first_used: %d\n", curfame.GetCurFrame(), first_empty, first_used);
+	} while (false);
+	
 	av_frame_free(&rgbFrame);
 	av_frame_free(&yuvFrame);
-	return &encoded_packet;
+	av_packet_free(&encoded_packet);
+	Log::log("VEncoder_h264 encode release resources end.");
+	return *size;
 }
 
 
@@ -742,6 +762,8 @@ bool VEncoder_h264::CopyD3D9RenderingFrame(IDirect3DDevice9* pDevice)
 		src += stride;
 	}
 	Log::log("\tWrite rect to buffer end in CopyingFrame.\n");
+	//Do release works
+	offscreenSurface->Release();
 	if (first_used == -1) {
 		first_used = first_empty;
 		used_cv.notify_one();

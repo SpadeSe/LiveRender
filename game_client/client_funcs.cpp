@@ -36,7 +36,7 @@ HRESULT StartClientRTSPThread() {
 	decode_extradatasize = cc.read_int();
 	decode_extradata = new uint8_t[decode_extradatasize];
 	cc.read_byte_arr((char*)decode_extradata, decode_extradatasize);
-	cc.get_config()->max_fps = cc.read_int();
+	cc.get_config()->max_fps_ = cc.read_int();
 	/*spslen = cc.read_int();
 	cc.read_byte_arr((char *)sps, spslen);
 	ppslen = cc.read_int();
@@ -44,6 +44,7 @@ HRESULT StartClientRTSPThread() {
 	memcpy(decode_extradata, sps, spslen);
 	memcpy(decode_extradata + spslen, pps, ppslen);
 	decode_extradatasize = spslen + ppslen;*/
+	initSDL(); //init SDL here first
 	thread rtsp_server_thread(client_rtsp_thread_main);
 	rtsp_server_thread.detach();
 	return S_OK;

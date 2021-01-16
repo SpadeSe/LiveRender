@@ -40,6 +40,7 @@ extern int decoder_width, decoder_height;
 //应当在fakedpresent中来调用，替换原本的present
 HRESULT displayPresented(IDirect3DDevice9* pDevice);
 
+bool initSDL();
 int client_rtsp_thread_main();
 
 class VDecoder_H264 {

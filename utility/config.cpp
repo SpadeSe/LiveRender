@@ -91,6 +91,7 @@ void ServerConfig::load_config() {
 		printf("invalid gop_size: %d, reset to 1.\n", encoder_gop_size_);
 		encoder_gop_size_ = 1;
 	}
+	read_property("encode", "use_hardware", use_hw_);
 }
 
 void ServerConfig::show_config() {
@@ -116,6 +117,10 @@ void ClientConfig::load_config(int client_num) {
 	sprintf(p_str, "port_%d", client_num);
 
 	read_property("command_server", p_str, srv_port_);
+
+	//read_property("command_server", "max_fps", max_fps_);
+
+	read_property("encode", "use_hardware", use_hw_);
 }
 
 void ClientConfig::show_config() {

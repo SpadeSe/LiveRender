@@ -32,6 +32,8 @@ public:
 	void take_command(int& op_code, int& obj_id);
 	ClientConfig* get_config();
 
+	CurFrame cfr; //client frame record
+
 private:
 	char* sv_ptr;
 	short func_count;

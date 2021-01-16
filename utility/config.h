@@ -29,8 +29,9 @@ public:
 	int useFrustumClip_;//0->false, 1->true
 
 	int command_port_;
-	int max_fps_;
+	int max_fps_ = 24;
 	int encoder_gop_size_ = 1;
+	int use_hw_ = 1;
 
 	int mesh_low_;
 	int mesh_up_;
@@ -48,7 +49,8 @@ public:
 
 	char srv_ip_[100];
 	int srv_port_;
-	int max_fps;
+	int max_fps_;
+	int use_hw_ = 1;
 };
 
 #endif

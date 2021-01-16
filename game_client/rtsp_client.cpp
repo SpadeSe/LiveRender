@@ -65,15 +65,21 @@ uint8_t* get_pool_used_buffer()
 }
 
 bool initSDL() {
-	Log::log("Start initing SDL......\n");
-	sdlRenderer = SDL_CreateRenderer(pSDLWindow, -1, 0);
-	if (!sdlRenderer) {
-		Log::log("Failed to create sdlRenderer.\n");
-		return false;
+	if (!sdl_inited) {
+		Log::log("Start initing SDL......\n");
+		if (!sdlRenderer) {
+			sdlRenderer = SDL_CreateRenderer(pSDLWindow, -1, 0);
+		}
+		if (!sdlRenderer) {
+			Log::log("Failed to create sdlRenderer.\n");
+			sdl_inited = false;
+		}
+		else {
+			sdl_inited = true;
+		}
+		Log::log("initSDL() End. success: %d\n", sdl_inited);
 	}
-	sdl_inited = true;
-	Log::log("SDL init End.\n");
-	return true;
+	return sdl_inited;
 }
 
 LRRTSPClient* openURL(UsageEnvironment& env, char const* progName, char const* rtspURL) {
@@ -93,7 +99,7 @@ LRRTSPClient* openURL(UsageEnvironment& env, char const* progName, char const* r
 int client_rtsp_thread_main()
 {
 	Log::log("client_rtsp_thread_main() start...\n");
-	initSDL();
+	//initSDL();
 	if (g_decoder == nullptr) {
 		Log::log("g_decoder is nullptr. static CreateNew() called\n");
 		g_decoder = VDecoder_H264::createNew();
@@ -289,6 +295,11 @@ void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes
 		pool_first_empty = (pool_first_empty + 1) % MAX_DECODE_POOL;
 		ret = decoder->decodeVideo(nullptr, 0, get_pool_empty_buffer());
 	}
+	if (!count)
+	{
+		Log::log("Failed to decode first frame in after getting frame during frame %d\n", curframe.GetCurFrame());
+	}
+
 	//TODO: display works
 
 
@@ -597,35 +608,42 @@ VDecoder_H264::VDecoder_H264()
 		Log::log("Error: failed to find h264 codec");
 	}
 	Log::log("VDecoder_H264::VDecoder_H264() codec init end.\n");
-	Log::log("VDecoder_H264::VDecoder_H264() start creating hwctx.\n");
-	ret = av_hwdevice_ctx_create(&hw_device_ctx, hwtype, nullptr, nullptr, 0);
-	if (ret < 0) {
-		Log::log("Error: failed to create hwdevice_ctx.\n");
-	}
-	Log::log("VDecoder_H264::VDecoder_H264() hwdevice_ctx create end. Start find hw_pix_fmt\n");
-	for (int i = 0; ; i++) {
-		const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
-		if (!config) {
-			Log::log("Decoder %s does not support device type %s.\n",
-				codec->name, av_hwdevice_get_type_name(hwtype));
-			ret = -1; break;
-		}
-		if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
-			config->device_type == hwtype) {
-			hw_pix_fmt = config->pix_fmt;
-			Log::log("hw_pix_fmt: %d, AV_PIX_FMT_YUV420P: %d\n", hw_pix_fmt, AVPixelFormat::AV_PIX_FMT_DXVA2_VLD);
-			ret = 0; break;
-		}
-	}
+	
+	
 	codecCtx = avcodec_alloc_context3(codec);
 	if (!codec) {
 		Log::log("Error: failed to alloc context3");
 	}
-	codecCtx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+	if (cc.get_config()->use_hw_) {
+		Log::log("VDecoder_H264::VDecoder_H264() start creating hwctx.\n");
+		ret = av_hwdevice_ctx_create(&hw_device_ctx, hwtype, nullptr, nullptr, 0);
+		if (ret < 0) {
+			Log::log("Error: failed to create hwdevice_ctx.\n");
+		}
+		Log::log("VDecoder_H264::VDecoder_H264() hwdevice_ctx create end. Start find hw_pix_fmt\n");
+		for (int i = 0; ; i++) {
+			const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
+			if (!config) {
+				Log::log("Decoder %s does not support device type %s.\n",
+					codec->name, av_hwdevice_get_type_name(hwtype));
+				ret = -1; break;
+			}
+			if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+				config->device_type == hwtype) {
+				hw_pix_fmt = config->pix_fmt;
+				Log::log("hw_pix_fmt: %d, AV_PIX_FMT_YUV420P: %d\n", hw_pix_fmt, AVPixelFormat::AV_PIX_FMT_DXVA2_VLD);
+				ret = 0; break;
+			}
+		}
+		codecCtx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+	}
+	else {
+		hw_device_ctx = nullptr;
+	}
 	codecCtx->width = decoder_width;
 	codecCtx->height = decoder_height;
 	codecCtx->time_base.num = 1;
-	codecCtx->time_base.den = cc.get_config()->max_fps;//TODO: fps setting to be improved
+	codecCtx->time_base.den = cc.get_config()->max_fps_;//TODO: fps setting to be improved
 	codecCtx->pix_fmt = AVPixelFormat::AV_PIX_FMT_YUV420P;
 	codecCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;//Place global headers in extradata instead of every keyframe.
 	//codecCtx->gop_size = 1;
@@ -641,7 +659,8 @@ VDecoder_H264::VDecoder_H264()
 	swsCtx = nullptr;
 	swsCtx = sws_getContext(
 		decoder_width, decoder_height,
-		AVPixelFormat::AV_PIX_FMT_NV12,//AVPixelFormat::AV_PIX_FMT_YUV420P,
+		(cc.get_config()->use_hw_)?
+			AVPixelFormat::AV_PIX_FMT_NV12 : AVPixelFormat::AV_PIX_FMT_YUV420P,
 		game_width, game_height,
 		outFormat,//TODO:the format here!
 		SWS_BICUBIC,
@@ -672,8 +691,8 @@ bool VDecoder_H264::decodeVideo(uint8_t* srcBuffer, int inbuffer_size,  /* in */
 	Log::log("Start decoding a frame...\n");
 	Log::log("avpkt: %p, avpkt.data: %p, srcBuffer: %p \n",&avpkt, avpkt.data, srcBuffer);
 	int ret;
-	AVFrame* yuvFrame_gpu = av_frame_alloc();
-	AVFrame* yuvFrame_cpu = av_frame_alloc();
+	AVFrame* yuvFrame_0 = av_frame_alloc(); //cpu frame is not using hardware, otherwise gpu frame
+	AVFrame* yuvFrame_1 = av_frame_alloc(); //if use hardware, this is cpu frame
 	AVFrame* rgbFrame = av_frame_alloc();
 	AVFrame* yuvFrame;
 	do 
@@ -693,22 +712,26 @@ bool VDecoder_H264::decodeVideo(uint8_t* srcBuffer, int inbuffer_size,  /* in */
 			Log::log("no packet to send... receive frame directly.\n");
 		}
 
-		ret = avcodec_receive_frame(codecCtx, yuvFrame_gpu);
+		ret = avcodec_receive_frame(codecCtx, yuvFrame_0);
 		if (ret) {
 			Log::log("Error: failed to receive_frame in decodeVideo: %d\n", ret);
 			ret = -1; break;
 		}
 		Log::log("receive frame end. ret: %d, yuvFrame height: %d, yuvFrame width: %d, yuvFrame data: %p, yuvFrame linesize: %d\n",
-			ret, yuvFrame_gpu->height, yuvFrame_gpu->width, yuvFrame_gpu->data, yuvFrame_gpu->linesize);
-
-		ret = av_hwframe_transfer_data(yuvFrame_cpu, yuvFrame_gpu, 0);
-		if (ret < 0) {
-			Log::log("Error: failed to transferring the data to system memory，ret: %d\n", ret);
-			break;
+			ret, yuvFrame_0->height, yuvFrame_0->width, yuvFrame_0->data, yuvFrame_0->linesize);
+		if (hw_device_ctx) {
+			ret = av_hwframe_transfer_data(yuvFrame_1, yuvFrame_0, 0);
+			if (ret < 0) {
+				Log::log("Error: failed to transferring the data to system memory，ret: %d\n", ret);
+				break;
+			}
+			Log::log("hwframe_transfer_data end. ret: %d, yuvFrame height: %d, yuvFrame width: %d, yuvFrame data: %p, yuvFrame linesize: %d\n",
+				ret, yuvFrame_1->height, yuvFrame_1->width, yuvFrame_1->data, yuvFrame_1->linesize);
+			yuvFrame = yuvFrame_1;//这里之后可以改成加设置开关
 		}
-		Log::log("hwframe_transfer_data end. ret: %d, yuvFrame height: %d, yuvFrame width: %d, yuvFrame data: %p, yuvFrame linesize: %d\n",
-			ret, yuvFrame_cpu->height, yuvFrame_cpu->width, yuvFrame_cpu->data, yuvFrame_cpu->linesize);
-		yuvFrame = yuvFrame_cpu;//这里之后可以改成加设置开关
+		else {
+			yuvFrame = yuvFrame_0;
+		}
 
 		//此处暂时和server的encoder相同
 		rgbFrame->format = outFormat;
@@ -720,7 +743,7 @@ bool VDecoder_H264::decodeVideo(uint8_t* srcBuffer, int inbuffer_size,  /* in */
 			break;
 		}
 		Log::log("decoder_height: %d, decoder_width: %d\n", decoder_height, decoder_width);
-		ret = sws_scale(swsCtx, yuvFrame->data, yuvFrame->linesize, 0, yuvFrame_cpu->height,
+		ret = sws_scale(swsCtx, yuvFrame->data, yuvFrame->linesize, 0, yuvFrame->height,
 			rgbFrame->data, rgbFrame->linesize);
 		if (ret <= 0) {
 			Log::log("Error: failed to sws_scale in decodeVideo\n");
@@ -737,8 +760,8 @@ bool VDecoder_H264::decodeVideo(uint8_t* srcBuffer, int inbuffer_size,  /* in */
 	} while (false);
 	
 	av_frame_free(&rgbFrame);
-	av_frame_free(&yuvFrame_gpu);
-	av_frame_free(&yuvFrame_cpu);
+	av_frame_free(&yuvFrame_0);
+	av_frame_free(&yuvFrame_1);
 	Log::log("Decode release work end.\n");
 	if (ret == 0)
 		return true;
