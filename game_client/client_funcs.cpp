@@ -128,13 +128,14 @@ HRESULT FakedPresent() {
 	//cur_device->UpdateSurface(newSurface, NULL, renderingSurface, NULL);
 	//cur_device->Present(NULL, NULL, NULL, NULL);
 	//hr = cur_device->SetViewport(&viewport);
-
+	Log::log("server frame: %d. calling merge_Present\n", frameID);
 	hr = merge_Present(cur_device);
 	//hr = cur_device->Present(NULL,NULL,NULL,NULL);
 
 	float t2 = timeGetTime();
+	int server_frame2 = cc.read_int();
 	Log::log("FakedPresent(), frameid: %d, client del_time=%.4f, server del_time: %.4f, differ: %.4f\n",
-		frameID, now_present - last_present, serverFrameTime, now_present - last_present - serverFrameTime);
+		server_frame2, now_present - last_present, serverFrameTime, now_present - last_present - serverFrameTime);
 	last_present = now_present;
 	return hr;
 }

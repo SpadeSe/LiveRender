@@ -21,7 +21,7 @@ extern "C" {
 using namespace std;
 
 //settings
-#define MAX_RGBBUFFER 8
+#define MAX_RGBBUFFER 4
 #define MAX_ENCODEDBUFFER 8
 #define BUFFER_SIZE 625000
 //in wrap_direct3d9, inited in createDevice
@@ -93,6 +93,8 @@ private:
 
 	AVCodec* codec;
 	AVBufferRef* hw_device_ctx;
+	AVBufferRef* hw_frames_ctx;
+	AVBufferPool* hwframespool;
 	AVCodecContext* codecCtx;
 	SwsContext* swsCtx;
 	spsppsdata* spspps;

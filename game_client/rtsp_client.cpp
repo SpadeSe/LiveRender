@@ -18,6 +18,7 @@ AVPixelFormat outFormat = AVPixelFormat::AV_PIX_FMT_BGR0;
 Uint32 sdlFormat = SDL_PIXELFORMAT_ARGB8888;
 AVHWDeviceType hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2;
 AVPixelFormat hwfmt = AVPixelFormat::AV_PIX_FMT_DXVA2_VLD;
+AVPixelFormat hw_sws_fmt = AVPixelFormat::AV_PIX_FMT_NV12;
 //global variables
 char eventLoopWatchVariable = 1;
 VDecoder_H264* g_decoder = nullptr;
@@ -137,6 +138,7 @@ int client_rtsp_thread_main()
 HRESULT merge_Present(IDirect3DDevice9* pDevice)
 {
 	Log::log("Start presenting......\n");
+	Sleep(10);
 	//Finished£ºcopy out the rendered part
 	if (!sdl_inited) {
 		Log::log("SDL renderer not inited. start initing.\n");
@@ -214,7 +216,7 @@ HRESULT merge_Present(IDirect3DDevice9* pDevice)
 		pool_first_used = -1;
 	}
 
-	Log::log("displayPresented End. cur pool_first_used: %d. cur_frame: %d\n", pool_first_used, curframe.GetCurFrame());
+	Log::log("merge_Present End. cur pool_first_used: %d. cur_frame: %d\n", pool_first_used, curframe.GetCurFrame());
 	curframe.IncreaseCurFrame();
 	return hr;
 }
@@ -473,7 +475,7 @@ void continueAfterSETUP(RTSPClient* rtspClient, int resultCode, char* resultStri
 
 void continueAfterPLAY(RTSPClient* rtspClient, int resultCode, char* resultString)
 {
-	Log::log("continueAfterPLAY() called.\n");
+	Log::log("continueAfterPLAY() called. result str: %s\n", resultString);
 	UsageEnvironment& env = rtspClient->envir(); // alias
 	StreamClientState& scs = ((LRRTSPClient*)rtspClient)->getScs(); // alias
 	if (resultCode != 0) {
@@ -624,20 +626,20 @@ VDecoder_H264::VDecoder_H264()
 			Log::log("Error: failed to create hwdevice_ctx.\n");
 		}
 		Log::log("VDecoder_H264::VDecoder_H264() hwdevice_ctx create end.\n");
-		/*for (int i = 0; ; i++) { // find hw_pix_fmt
-			const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
-			if (!config) {
-				Log::log("Decoder %s does not support device type %s.\n",
-					codec->name, av_hwdevice_get_type_name(hwtype));
-				ret = -1; break;
-			}
-			if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
-				config->device_type == hwtype) {
-				hwfmt = config->pix_fmt;
-				Log::log("hw_pix_fmt: %d, AV_PIX_FMT_YUV420P: %d\n", hwfmt, AVPixelFormat::AV_PIX_FMT_DXVA2_VLD);
-				ret = 0; break;
-			}
-		}*/
+		//for (int i = 0; ; i++) { // find hw_pix_fmt
+		//	const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
+		//	if (!config) {
+		//		Log::log("Decoder %s does not support device type %s.\n",
+		//			codec->name, av_hwdevice_get_type_name(hwtype));
+		//		ret = -1; break;
+		//	}
+		//	if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+		//		config->device_type == hwtype) {
+		//		hwfmt = config->pix_fmt;
+		//		Log::log("hw_pix_fmt: %d, AV_PIX_FMT_DXVA2_VLD: %d\n", hwfmt, AVPixelFormat::AV_PIX_FMT_DXVA2_VLD);
+		//		ret = 0; break;
+		//	}
+		//}
 		codecCtx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
 	}
 	else {
@@ -663,7 +665,7 @@ VDecoder_H264::VDecoder_H264()
 	swsCtx = sws_getContext(
 		decoder_width, decoder_height,
 		(cc.get_config()->use_hw_)?
-			hwfmt : AVPixelFormat::AV_PIX_FMT_YUV420P,
+		hw_sws_fmt : AVPixelFormat::AV_PIX_FMT_YUV420P,
 		game_width, game_height,
 		outFormat,//TODO:the format here!
 		SWS_BICUBIC,
@@ -706,7 +708,7 @@ bool VDecoder_H264::get_decoded(uint8_t* srcBuffer, int inbuffer_size,  /* in */
 
 			ret = avcodec_send_packet(codecCtx, &avpkt);
 			if (ret) {
-				Log::log("Error: failed to send_packet in decodeVideo: %d\n", ret);
+				Log::log("Error: failed to send_packet in get_decoded: %d\n", ret);
 				ret = -1; break;
 			}
 			Log::log("send packet end. ret: %d\n", ret);
@@ -717,7 +719,7 @@ bool VDecoder_H264::get_decoded(uint8_t* srcBuffer, int inbuffer_size,  /* in */
 
 		ret = avcodec_receive_frame(codecCtx, yuvFrame_0);
 		if (ret) {
-			Log::log("Error: failed to receive_frame in decodeVideo: %d\n", ret);
+			Log::log("Error: failed to receive_frame in get_decoded: %d\n", ret);
 			ret = -1; break;
 		}
 		Log::log("receive frame end. ret: %d, yuvFrame height: %d, yuvFrame width: %d, yuvFrame data: %p, yuvFrame linesize: %d\n",
@@ -749,7 +751,7 @@ bool VDecoder_H264::get_decoded(uint8_t* srcBuffer, int inbuffer_size,  /* in */
 		ret = sws_scale(swsCtx, yuvFrame->data, yuvFrame->linesize, 0, yuvFrame->height,
 			rgbFrame->data, rgbFrame->linesize);
 		if (ret <= 0) {
-			Log::log("Error: failed to sws_scale in decodeVideo\n");
+			Log::log("Error: failed to sws_scale in get_decoded\n");
 			ret = -1; break;
 		}
 		Log::log("sws_scale end. ret(slice height):%d\n", ret);

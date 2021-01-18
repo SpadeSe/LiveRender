@@ -251,6 +251,7 @@ STDMETHODIMP WrapperDirect3DDevice9::Present(THIS_ CONST RECT* pSourceRect,CONST
 	/////////////////////////////////////////////////////////////////////
 	cs.write_float((float)cur_time);
 	cs.write_float((float)frame_time);
+	cs.write_int(frameId);
 	cs.end_command();
 
 	is_even_frame_ ^= 1;
