@@ -14,7 +14,7 @@ extern int spslen, ppslen;
 bool rtsp_server_inited = false;
 VEncoder_h264* g_encoder;
 //settings
-const int video_bitrate = 12000000; //bit. used for estBitrate
+const int video_bitrate = 12 * 1024 * 1024; //bit. used for estBitrate
 const int max_out_packet_size = 2000000; //8000000;//used when create new stream source
 const int rgb_buffer_size = 8000000; //bit. the size of rgb_buffer. remember to divide by 4. Too small will lead to exception in copy
 AVPixelFormat sws_infmt = AVPixelFormat::AV_PIX_FMT_BGR0;
@@ -389,7 +389,8 @@ RTPSink* MSubsession::createNewRTPSink(Groupsock* rtpGroupsock,
 {
 	Log::log("MSubsession::createNewRTPSink() called...\n");
 	VEncoder_h264::spsppsdata* spspps = g_encoder->getSpsppsdata();
-	RTPSink* result = H264Sink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic,
+	RTPSink* result = 
+		H264Sink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic,
 		spspps->sps, spspps->spslen, spspps->pps, spspps->ppslen);
 	Log::log("MSubsession::createNewRTPSink() end.\n");
 	return result;
@@ -720,6 +721,12 @@ int VEncoder_h264::get_encoded(uint8_t* dst, unsigned* size)
 		}
 		else {
 			Log::log("avcodec_send_frame() success.\n");
+			srcBuffer->clear();
+			first_used = (first_used + 1) % MAX_RGBBUFFER;
+			if (first_used == first_empty) {
+				first_used = -1;//所有待编码的全部编完了。
+			}
+			empty_cv.notify_one();//send一个buffer之后必然空出来一个buffer
 		}
 		ret = avcodec_receive_packet(codecCtx, encoded_packet);
 		if (ret) {
@@ -731,12 +738,6 @@ int VEncoder_h264::get_encoded(uint8_t* dst, unsigned* size)
 			*size = encoded_packet->size;
 			memmove(dst, encoded_packet->data, encoded_packet->size);
 		}
-		srcBuffer->clear();
-		first_used = (first_used + 1) % MAX_RGBBUFFER;
-		if (first_used == first_empty) {
-			first_used = -1;//所有待编码的全部编完了。
-		}
-		empty_cv.notify_one();//编码完一个buffer之后必然空出来一个buffer
 		Log::log("VEncoder_h264 encode end. cur_frame: %d, cur first_empty: %d, cur first_used: %d\n", curfame.GetCurFrame(), first_empty, first_used);
 	} while (false);
 	
