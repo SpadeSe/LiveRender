@@ -1,7 +1,6 @@
 #include "rtsp_server.h"
 #include "UsageEnvironment.hh"
 #include "HandlerSet.hh"
-#include "libavutil/hwcontext_dxva2.h"
 #include <cstdio>
 using namespace std;
 //outer variables
@@ -18,9 +17,9 @@ const int video_bitrate = 12 * 1024 * 1024; //bit. used for estBitrate
 const int max_out_packet_size = 2000000; //8000000;//used when create new stream source
 const int rgb_buffer_size = 8000000; //bit. the size of rgb_buffer. remember to divide by 4. Too small will lead to exception in copy
 AVPixelFormat sws_infmt = AVPixelFormat::AV_PIX_FMT_BGR0;
-AVHWDeviceType hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_DXVA2;
-AVDXVA2FramesContext dxva2hwCtx;
-AVPixelFormat hwfmt = AVPixelFormat::AV_PIX_FMT_DXVA2_VLD;
+AVHWDeviceType hwtype = AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA;
+AVPixelFormat hw_fmt = AVPixelFormat::AV_PIX_FMT_CUDA;
+AVPixelFormat hw_sw_fmt = AVPixelFormat::AV_PIX_FMT_NV12;
 
 CurFrame curfame;
 
@@ -464,10 +463,10 @@ VEncoder_h264::VEncoder_h264()
 		Log::log("VEncoder_h264 start creating hwctx.\n");
 		ret = av_hwdevice_ctx_create(&hw_device_ctx, hwtype, nullptr, nullptr, 0);
 		if (ret < 0) {
-			Log::log("Error: failed to create hw_device_ctx.\n");
+			Log::log("Error: failed to create hw_device_ctx: %s\n", av_make_error_string(errbuf, 100, ret));
 		}
 		Log::log("VEncoder_H264::VEncoder_H264() hw_device_ctx create end.\n");
-		hw_frames_ctx = av_hwframe_ctx_alloc(hw_device_ctx);
+		AVBufferRef* hw_frames_ctx = av_hwframe_ctx_alloc(hw_device_ctx);
 		if (hw_frames_ctx == nullptr) {
 			Log::log("Error: failed to alloc hwd_frame_ctx\n");
 		}
@@ -487,40 +486,51 @@ VEncoder_h264::VEncoder_h264()
 		}*/
 		AVHWFramesContext* av_hwFrames_ctx = (AVHWFramesContext*)hw_frames_ctx->data;
 		Log::log("av_hwFrames_ctx: %p, hw_frames_ctx->data: %p\n", av_hwFrames_ctx, hw_frames_ctx->data);
-		av_hwFrames_ctx->format = hwfmt;
-		av_hwFrames_ctx->sw_format = AVPixelFormat::AV_PIX_FMT_YUV420P;
+		av_hwFrames_ctx->format = hw_fmt;
+		av_hwFrames_ctx->sw_format = hw_sw_fmt;
 		av_hwFrames_ctx->height = encoder_height;
 		av_hwFrames_ctx->width = encoder_width;
-		//av_hwFrames_ctx->free = freeHWFramesCtx;
-		hwframespool = av_buffer_pool_init((encoder_height * encoder_width) << 2, NULL);
-		av_hwFrames_ctx->pool = hwframespool;
-		dxva2hwCtx.surface_type = DXVA2_VideoProcessorRenderTarget;
-		av_hwFrames_ctx->hwctx = &dxva2hwCtx;
+		av_hwFrames_ctx->initial_pool_size = cs.config_->max_fps_;
 		ret = av_hwframe_ctx_init(hw_frames_ctx);
 		if (ret) {
 			Log::log("Error: failed to init hwd_frame_ctx: %s\n", av_make_error_string(errbuf, 100, ret));
 		}
-		//codecCtx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
-		//codecCtx->hw_frames_ctx = av_buffer_ref(hw_frames_ctx);
+		/*codecCtx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+		if (!codecCtx->hw_device_ctx) {
+			Log::log("Error: failed to av_buffer_ref(hw_device_ctx).\n");
+		}*/
+		codecCtx->hw_device_ctx = nullptr;
+		codecCtx->hw_frames_ctx = av_buffer_ref(hw_frames_ctx);
+		if (!codecCtx->hw_frames_ctx) {
+			Log::log("Error: failed to av_buffer_ref(hw_frames_ctx).\n");
+		}
+		av_buffer_unref(&hw_frames_ctx);
 	}
-	else {
-		hw_device_ctx = nullptr;
-	}
+	
 	codecCtx->width = encoder_width;
 	codecCtx->height = encoder_height;
-	codecCtx->time_base.num = 1;
-	codecCtx->time_base.den = cs.config_->max_fps_;//TODO: fps setting to be improved
-	codecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
-	codecCtx->pix_fmt = (codecCtx->hw_device_ctx)?hwfmt:AVPixelFormat::AV_PIX_FMT_YUV420P;
-	codecCtx->sw_pix_fmt = AVPixelFormat::AV_PIX_FMT_YUV420P;
+	codecCtx->time_base = AVRational{ 1, cs.config_->max_fps_ };
+	codecCtx->framerate = AVRational{ cs.config_->max_fps_, 1 };
+	codecCtx->codec_type = AVMediaType::AVMEDIA_TYPE_VIDEO;
+	codecCtx->pix_fmt = (codecCtx->hw_frames_ctx)?hw_fmt:AVPixelFormat::AV_PIX_FMT_YUV420P;
+	codecCtx->sw_pix_fmt = (codecCtx->hw_frames_ctx) ? hw_sw_fmt : AVPixelFormat::AV_PIX_FMT_YUV420P;
 	codecCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;//Place global headers in extradata instead of every keyframe.
 	codecCtx->rc_buffer_size = BUFFER_SIZE;
 	//codecCtx->bit_rate = video_bitrate; //设置这个会越来越糊，大小影响多久变得越来越糊
 	codecCtx->bit_rate_tolerance = video_bitrate * 2;
 	Log::log("encoder gop size: %d\n", cs.config_->encoder_gop_size_);
 	codecCtx->gop_size = cs.config_->encoder_gop_size_;
+	codecCtx->max_b_frames = 1;
+	codecCtx->global_quality = 20;
+	//av_opt_set(codecCtx->priv_data, "rc_mode", "CQP", AV_OPT_SEARCH_CHILDREN);
+	AVDictionary* opts = nullptr;
+	//av_dict_set(&opts, "profile", "baseline", 0);
+	//av_dict_set(&opts, "preset", "superfast", 0);
+	av_dict_set(&opts, "tune", "zerolatency", 0);
+	av_dict_set(&opts, "intra-refresh", "1", 0);
+	//av_dict_set(&opts, "slice-max-size", "1500", 0);
 	
-	ret = avcodec_open2(codecCtx, codec, NULL);
+	ret = avcodec_open2(codecCtx, codec, &opts);
 	if (ret < 0) {
 		Log::log("Error: failed to avcodec_open2 in init VEncoder_h264.ret:%s\n", av_make_error_string(errbuf, 100, ret));
 		exit(1);
@@ -531,7 +541,7 @@ VEncoder_h264::VEncoder_h264()
 		game_width, game_height,
 		sws_infmt,//the format here!
 		encoder_width, encoder_height,
-		(codecCtx->hw_device_ctx)?AV_PIX_FMT_NV12:AVPixelFormat::AV_PIX_FMT_YUV420P,
+		(codecCtx->hw_frames_ctx)?hw_sw_fmt:AVPixelFormat::AV_PIX_FMT_YUV420P,
 		SWS_BICUBIC,
 		NULL, NULL, NULL);
 	//get sps & pps 
@@ -617,8 +627,6 @@ VEncoder_h264::~VEncoder_h264()
 	delete[] buffers;
 	avcodec_close(codecCtx);
 	avcodec_free_context(&codecCtx);
-	av_buffer_unref(&hw_frames_ctx);
-	av_buffer_pool_uninit(&hwframespool);
 	av_buffer_unref(&hw_device_ctx);
 	delete spspps;
 	Log::log("~VEncoder_h264() end.\n");
@@ -668,20 +676,17 @@ int VEncoder_h264::get_encoded(uint8_t* dst, unsigned* size)
 
 	int ret = 0;
 	*size = 0;
-	AVFrame* yuvFrame = av_frame_alloc();
+	AVFrame* yuvFrame;
+	AVFrame* sw_yuvFrame = av_frame_alloc();
+	AVFrame* hw_yuvFrame = av_frame_alloc();
 	AVFrame* rgbFrame = av_frame_alloc();
 	AVPacket* encoded_packet = av_packet_alloc();
-	yuvFrame->format = AVPixelFormat::AV_PIX_FMT_YUV420P;
-	yuvFrame->width = encoder_width;
-	yuvFrame->height = encoder_height;
 	do 
 	{
-		if (codecCtx->hw_device_ctx) {
-			ret = av_hwframe_get_buffer(hw_frames_ctx, yuvFrame, 0);
-		}
-		else {
-			ret = av_frame_get_buffer(yuvFrame, 0);
-		}
+		sw_yuvFrame->format = (codecCtx->hw_frames_ctx) ? hw_sw_fmt : AVPixelFormat::AV_PIX_FMT_YUV420P;
+		sw_yuvFrame->width = encoder_width;
+		sw_yuvFrame->height = encoder_height;
+		ret = av_frame_get_buffer(sw_yuvFrame, 0);
 		//TODO: error process
 		if (ret) {
 			Log::log("Error: failed to av_frame_get_buffer in get_encoded()\n");
@@ -700,20 +705,23 @@ int VEncoder_h264::get_encoded(uint8_t* dst, unsigned* size)
 			Log::log("the size in bytes required for src: %d\n", ret);
 		}
 		ret = sws_scale(swsCtx, rgbFrame->data, rgbFrame->linesize, 0, game_height,
-			yuvFrame->data, yuvFrame->linesize);
+			sw_yuvFrame->data, sw_yuvFrame->linesize);
 		Log::log("the height of the output slice(sws_scale): %d\n", ret);
-
-		av_init_packet(encoded_packet);
+		if (codecCtx->hw_frames_ctx) {//use hardware
+			ret = av_hwframe_get_buffer(codecCtx->hw_frames_ctx, hw_yuvFrame, 0);
+			if (ret) {
+				Log::log("Error: failed to av_hwframe_get_buffer() in get_encoded(): %d\n", ret); 
+				break;
+			}
+			ret = av_hwframe_transfer_data(hw_yuvFrame, sw_yuvFrame, 0);
+			if (ret) {
+				Log::log("Error: failed to av_hwframe_transfer_data() in get_encoded(): %d\n", ret);
+				break;
+			}
+		}
+		yuvFrame = (codecCtx->hw_frames_ctx) ? hw_yuvFrame : sw_yuvFrame;
 		Log::log("av_init_packet() end. start send_frame. codec: %p, codecCtx->codec: %p, yuvFrame: %p\n",
 			codec, codecCtx->codec, yuvFrame);
-		/*int got_packet;
-		ret = avcodec_encode_video2(codecCtx, &encoded_packet, yuvFrame, &got_packet);
-		if (!got_packet) {
-			Log::log("not get packet after avcodec_encode_video2()\n");
-		}
-		if (ret < 0) {
-			Log::log("Failed to avcodec_encode_video2(). ret: %d\n", ret);
-		}*/
 		ret = avcodec_send_frame(codecCtx, yuvFrame);
 		if (ret) {
 			Log::log("Error: failed to send_frame in get_encoded(): %d\n", ret);
@@ -728,9 +736,21 @@ int VEncoder_h264::get_encoded(uint8_t* dst, unsigned* size)
 			}
 			empty_cv.notify_one();//send一个buffer之后必然空出来一个buffer
 		}
+		av_init_packet(encoded_packet);
 		ret = avcodec_receive_packet(codecCtx, encoded_packet);
 		if (ret) {
 			Log::log("Error: failed to receive_packet in get_encoded(): %d\n", ret);
+			//int count = 0;
+			//while (++count < cs.config_->encoder_gop_size_) {//fraid of endless loop
+			//	/*AVPacket flush_pack;
+			//	flush_pack.data = nullptr;
+			//	flush_pack.size = 0;*/
+			//	avcodec_send_frame(codecCtx, NULL);//send NULL frame to flush
+			//	if (ret) {
+			//		avcodec_flush_buffers(codecCtx);
+			//		break;
+			//	}
+			//}
 			break;
 		}
 		else {
@@ -742,7 +762,8 @@ int VEncoder_h264::get_encoded(uint8_t* dst, unsigned* size)
 	} while (false);
 	
 	av_frame_free(&rgbFrame);
-	av_frame_free(&yuvFrame);
+	av_frame_free(&hw_yuvFrame);
+	av_frame_free(&sw_yuvFrame);
 	av_packet_free(&encoded_packet);
 	Log::log("VEncoder_h264 encode release resources end.\n");
 	return *size;

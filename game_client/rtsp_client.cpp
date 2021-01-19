@@ -655,7 +655,17 @@ VDecoder_H264::VDecoder_H264()
 	codecCtx->extradata_size = decode_extradatasize;
 	codecCtx->extradata = (uint8_t*)av_malloc(decode_extradatasize + AV_INPUT_BUFFER_PADDING_SIZE);
 	memcpy(codecCtx->extradata, decode_extradata, decode_extradatasize);//WARNING: make sure decode_extradata is inited!
-	ret = avcodec_open2(codecCtx, codec, NULL);
+
+	codecCtx->global_quality = 20;
+	//av_opt_set(codecCtx->priv_data, "rc_mode", "CQP", AV_OPT_SEARCH_CHILDREN);
+	AVDictionary* opts = nullptr;
+	//av_dict_set(&opts, "profile", "baseline", 0);
+	//av_dict_set(&opts, "preset", "superfast", 0);
+	av_dict_set(&opts, "tune", "zerolatency", 0);
+	av_dict_set(&opts, "intra-refresh", "1", 0);
+	//av_dict_set(&opts, "slice-max-size", "1500", 0);
+
+	ret = avcodec_open2(codecCtx, codec, &opts);
 	Log::log("VDecoder_H264::VDecoder_H264() codecCtx init end.\n");
 	//frame = av_frame_alloc();
 	av_init_packet(&avpkt);
@@ -711,10 +721,20 @@ bool VDecoder_H264::get_decoded(uint8_t* srcBuffer, int inbuffer_size,  /* in */
 				Log::log("Error: failed to send_packet in get_decoded: %d\n", ret);
 				ret = -1; break;
 			}
-			Log::log("send packet end. ret: %d\n", ret);
+			Log::log("send packet end\n");
 		}
 		else {
-			Log::log("no packet to send... receive frame directly.\n");
+			Log::log("no packet to send... receive packet directly.\n");
+			//Log::log("no packet to send... try send NULL frame.\n");
+			///*avpkt.data = NULL;
+			//avpkt.size = 0;*/
+			//ret = avcodec_send_packet(codecCtx, NULL);//send NULL packet to flush
+			//if (ret) {
+			//	Log::log("Error: failed to send NULL packet in get_decoded: %d\n", ret);
+			//	avcodec_flush_buffers(codecCtx);
+			//	ret = -1; break;
+			//}
+			//Log::log("send NULL packet.\n");
 		}
 
 		ret = avcodec_receive_frame(codecCtx, yuvFrame_0);

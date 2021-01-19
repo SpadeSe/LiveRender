@@ -13,6 +13,7 @@ extern "C" {
 	//#include "libavutil/avutil.h"
 	#include "libavutil/imgutils.h"
 	#include "libswscale/swscale.h"
+	#include "libavutil/opt.h"
 }
 #include <vector>
 #include <thread>
@@ -93,8 +94,6 @@ private:
 
 	AVCodec* codec;
 	AVBufferRef* hw_device_ctx;
-	AVBufferRef* hw_frames_ctx;
-	AVBufferPool* hwframespool;
 	AVCodecContext* codecCtx;
 	SwsContext* swsCtx;
 	spsppsdata* spspps;
